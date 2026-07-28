@@ -92,6 +92,20 @@ Any frame can become a repeater (inspector → Repeater):
   layout instead of manual duplication. Only the first clone is directly
   editable; the rest are ghosts that select the repeater.
 
+### HTML import (code → design)
+Paste HTML anywhere on the canvas — or use the `</>` toolbar button for a
+paste-in dialog with a bundled example. Blocks become auto-layout frames,
+headings and paragraphs become styled text (inline `style=""` attributes are
+best-effort parsed; stylesheets are ignored — it's deliberately lossy), images
+and buttons get placeholder treatment. The interesting part: when a
+container's children share an identical structure (a card list, a product
+grid), the importer converts it into a **collection-bound repeater** — the
+content is extracted into a JSON collection in the Data panel (field names
+from class names or tag heuristics), and the template's text is bound to
+`item.*` paths. Adjacent inline spans (`<span class="name">` +
+`<span class="price">`) become separate fields. Every import is a single
+undo step.
+
 ## How it works
 
 ```

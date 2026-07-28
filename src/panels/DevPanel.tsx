@@ -1,7 +1,7 @@
 import { Check, ChevronRight, Copy, UploadCloud } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { connectedComponentSnippet, fetchSnippet, sampleJson, tsInterfaces, typeInterface } from '../model/codegen'
-import { getByPath, resolveContent } from '../model/resolve'
+import { componentFields, getByPath, resolveOverride, resolveText } from '../model/resolve'
 import {
   deriveSchema,
   describeConstraint,
@@ -14,21 +14,30 @@ import {
 } from '../model/schema'
 import type {
   AnyNode,
-  ContentSource,
   DesignDoc,
+  FieldConnection,
   InstanceNode,
   NodeId,
+  OverrideValue,
   RenderContext,
   TextNode,
 } from '../model/types'
+import { contentChip } from '../editor/RenderNode'
 import { enclosingCollectionPath, useStore } from '../store'
 import { Section } from '../ui/controls'
 
-const SOURCE_LABELS: Record<ContentSource['type'], string> = {
-  static: 'Static',
-  binding: 'Data binding',
+const SOURCE_LABELS: Record<SchemaField['source'], string> = {
+  placeholder: 'Placeholder',
   generator: 'Generator',
-  prop: 'Component prop',
+  binding: 'Data binding',
+  mixed: 'Mixed',
+}
+
+/** A connection's (or instance override's) point on the ladder, as a label. */
+function connectionLabel(c: FieldConnection | OverrideValue): string {
+  if (c.type === 'binding') return SOURCE_LABELS.binding
+  if (c.type === 'generator') return SOURCE_LABELS.generator
+  return SOURCE_LABELS.placeholder // 'none' (unconnected field) or 'static' (instance override)
 }
 
 const KIND_LABELS: Record<SchemaType['kind'], string> = {
@@ -111,6 +120,13 @@ function fieldMeta(field: SchemaField): string {
   return [intentLabel(field.intent), describeConstraint(field.constraint)].filter(Boolean).join(' · ')
 }
 
+/** "placeholder · 3 items" (count mode) vs "5 items" (data-bound). */
+function collectionCaption(type: SchemaType): string {
+  const count = type.itemCount ?? 0
+  const items = `${count} item${count === 1 ? '' : 's'}`
+  return type.state === 'placeholder' ? `placeholder · ${items}` : items
+}
+
 export function DevPanel() {
   const doc = useStore((s) => s.doc)
   const published = useStore((s) => s.publishedSchema)
@@ -185,6 +201,13 @@ function FileView({ doc, schema }: { doc: DesignDoc; schema: DerivedSchema }) {
               ))}
             </ul>
           )}
+          {schema.defaultNamedCount > 0 && (
+            <div className="dev-lint" title="A quality gate before publish, not a blocker">
+              <span className="dev-lint-dot" />
+              {schema.defaultNamedCount} field{schema.defaultNamedCount === 1 ? '' : 's'} still{' '}
+              {schema.defaultNamedCount === 1 ? 'has a default name' : 'have default names'}
+            </div>
+          )}
           {confirming ? (
             <div className="dev-publish-actions">
               <button className="btn" onClick={() => setConfirming(false)}>
@@ -211,7 +234,9 @@ function FileView({ doc, schema }: { doc: DesignDoc; schema: DerivedSchema }) {
 
       <Section title="Types" badge={<span className="dev-caption">{schema.types.length}</span>}>
         <div className="dev-coverage">
-          {schema.structuredTextCount} of {schema.totalTextCount} text layers structured
+          {schema.fieldCount} field{schema.fieldCount === 1 ? '' : 's'} across {schema.types.length} type
+          {schema.types.length === 1 ? '' : 's'} · {schema.structuredTextCount} of {schema.totalTextCount} text
+          layers structured
         </div>
         <div className="dev-meter">
           <div className="dev-meter-fill" style={{ width: `${Math.round(coverage * 100)}%` }} />
@@ -226,7 +251,7 @@ function FileView({ doc, schema }: { doc: DesignDoc; schema: DerivedSchema }) {
             <button className="dev-type-head" title="Select this layer" onClick={() => select([type.sourceId])}>
               <span className={`node-kind-badge kind-${type.kind}`}>{KIND_LABELS[type.kind]}</span>
               <span className="dev-type-name">{type.name}</span>
-              {type.kind === 'collection' && <span className="dev-caption">{type.itemCount ?? 0} items</span>}
+              {type.kind === 'collection' && <span className="dev-caption">{collectionCaption(type)}</span>}
             </button>
             <FieldList fields={type.fields} />
           </div>
@@ -242,14 +267,14 @@ function NodeInspector({ doc, schema, node }: { doc: DesignDoc; schema: DerivedS
   const select = useStore((s) => s.select)
   const type = typeForNode(schema, node)
   const kind = nodeKind(node)
-  const fieldName = node.type === 'text' ? node.field?.name.trim() : undefined
+  const chip = node.type === 'text' ? contentChip(node) : null
 
   return (
     <div className="dev-panel">
       <div className="insp-name-row">
         <span className={`node-kind-badge kind-${kind.toLowerCase()}`}>{kind}</span>
         <span className="dev-node-name">{node.name}</span>
-        {fieldName && <span className="content-chip chip-field">⌁ {fieldName}</span>}
+        {chip && <span className={`content-chip ${chip.cls}`}>{chip.label}</span>}
       </div>
       {type &&
         (type.sourceId === node.id ? (
@@ -279,28 +304,27 @@ function TextContentSection({ doc, node, type }: { doc: DesignDoc; node: TextNod
   const copy = useCopy()
   const field = type?.fields.find((f) => f.nodeIds.includes(node.id))
 
-  if (!field && !node.field && node.content.type === 'static') {
+  if (!node.field) {
     return (
       <Section title="Content">
         <div className="insp-hint">
-          No field metadata — switch to Design mode (Shift+D) to mark this text as a content field.
+          Plain text — switch to Design mode (Shift+D) to mark it as a content field.
         </div>
       </Section>
     )
   }
 
+  const connection = node.field.connection
   const rows: { label: string; value: string }[] = []
-  const name = field?.name ?? node.field?.name.trim()
-  if (name) rows.push({ label: 'Field', value: name })
-  rows.push({ label: 'Intent', value: intentLabel(field?.intent ?? node.field?.intent ?? 'custom') })
-  const constraint = describeConstraint(field?.constraint ?? node.field?.maxLength ?? null)
+  rows.push({ label: 'Field', value: node.field.name })
+  rows.push({ label: 'Intent', value: intentLabel(field?.intent ?? node.field.intent) })
+  const constraint = describeConstraint(field?.constraint ?? node.field.maxLength ?? null)
   if (constraint) rows.push({ label: 'Constraint', value: constraint })
-  rows.push({ label: 'Source', value: SOURCE_LABELS[node.content.type] })
-  if (node.content.type === 'binding') rows.push({ label: 'Path', value: node.content.path })
-  if (node.content.type === 'prop') rows.push({ label: 'Prop', value: node.content.prop })
+  rows.push({ label: 'Source', value: connectionLabel(connection) })
+  if (connection.type === 'binding') rows.push({ label: 'Path', value: connection.path })
   rows.push({ label: 'Type', value: field?.type ?? 'string' })
-  rows.push({ label: 'Value', value: field?.sampleValue ?? resolveContent(node.content, doc, {}).text })
-  const description = node.field?.description?.trim() || field?.description
+  rows.push({ label: 'Value', value: field?.sampleValue ?? resolveText(node, doc, {}).text })
+  const description = node.field.description?.trim() || field?.description
   if (description) rows.push({ label: 'Description', value: description })
 
   return (
@@ -319,8 +343,8 @@ function TextContentSection({ doc, node, type }: { doc: DesignDoc; node: TextNod
           </button>
         ))}
       </div>
-      {node.content.type === 'static' && (
-        <div className="insp-hint">Static text with field markup — still part of the published schema.</div>
+      {connection.type === 'none' && (
+        <div className="insp-hint">Placeholder — shows until the field is connected. Still part of the published schema.</div>
       )}
     </Section>
   )
@@ -329,8 +353,7 @@ function TextContentSection({ doc, node, type }: { doc: DesignDoc; node: TextNod
 function ConnectedCodeSection({ doc, node }: { doc: DesignDoc; node: InstanceNode }) {
   const copy = useCopy()
   const snippet = connectedComponentSnippet(doc, node.id)
-  const def = doc.nodes[node.componentId]
-  const props = def?.type === 'frame' ? (def.props ?? []) : []
+  const fields = componentFields(doc, node.componentId)
   const ctx = instanceContext(doc, node.id)
 
   return (
@@ -350,21 +373,21 @@ function ConnectedCodeSection({ doc, node }: { doc: DesignDoc; node: InstanceNod
           <div className="insp-hint">This instance has lost its component definition.</div>
         )}
       </Section>
-      <Section title="Props" badge={<span className="dev-caption">click to copy</span>}>
-        {props.length === 0 && <div className="insp-hint">This component has no props.</div>}
+      <Section title="Fields" badge={<span className="dev-caption">click to copy</span>}>
+        {fields.length === 0 && <div className="insp-hint">This component has no fields.</div>}
         <div className="dev-list">
-          {props.map((prop) => {
-            const source: ContentSource = node.overrides[prop.name] ?? { type: 'static', value: prop.defaultValue }
-            const value = resolveContent(source, doc, ctx).text
+          {fields.map(({ node: defNode, field }) => {
+            const override = node.overrides[field.name]
+            const value = override ? resolveOverride(override, doc, ctx).text : resolveText(defNode, doc, ctx).text
             return (
               <button
                 className="dev-list-row is-prop"
-                key={prop.name}
+                key={field.name}
                 title="Copy value"
                 onClick={() => copy(value, `“${truncate(value)}”`)}
               >
-                <span className="dev-list-label">{prop.name}</span>
-                <span className="dev-list-source">{SOURCE_LABELS[source.type]}</span>
+                <span className="dev-list-label">{field.name}</span>
+                <span className="dev-list-source">{connectionLabel(override ?? field.connection)}</span>
                 <span className="dev-list-value">{value}</span>
               </button>
             )
@@ -377,10 +400,10 @@ function ConnectedCodeSection({ doc, node }: { doc: DesignDoc; node: InstanceNod
 
 function FieldsSection({ type }: { type: SchemaType }) {
   return (
-    <Section
-      title={type.kind === 'component' ? 'Props' : 'Fields'}
-      badge={type.kind === 'collection' ? <span className="dev-caption">{type.itemCount ?? 0} items</span> : undefined}
-    >
+    <Section title="Fields" badge={type.kind === 'collection' ? <span className="dev-caption">{collectionCaption(type)}</span> : undefined}>
+      {type.kind === 'component' && (
+        <div className="insp-hint">Fields inside this component are its content API.</div>
+      )}
       <FieldList fields={type.fields} />
     </Section>
   )

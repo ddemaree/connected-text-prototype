@@ -457,3 +457,28 @@ pre.dev-code {
   font-size: 10px;
   color: var(--text-faint);
 }
+
+/* ===== Field-first ===== */
+
+/* Layers panel: placeholder fields get a hollow ring, not a filled dot. */
+.layer-dot.dot-field {
+  background: transparent;
+  border: 1.5px solid var(--dev);
+}
+
+/* Publish card: default-name lint, amber and non-blocking. */
+.dev-lint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--generator);
+}
+
+.dev-lint-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--generator);
+  flex-shrink: 0;
+}

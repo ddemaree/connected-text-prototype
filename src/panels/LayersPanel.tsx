@@ -11,18 +11,23 @@ function NodeIcon({ node }: { node: AnyNode }) {
   return <Frame size={12} className="layer-icon" />
 }
 
+/** Placeholder fields get a hollow ring; connected fields a filled dot; plain text nothing. */
 function sourceDot(node: AnyNode): string | null {
-  if (node.type !== 'text') return null
-  switch (node.content.type) {
+  if (node.type !== 'text' || !node.field) return null
+  switch (node.field.connection.type) {
+    case 'none':
+      return 'dot-field'
     case 'binding':
       return 'dot-binding'
     case 'generator':
       return 'dot-generator'
-    case 'prop':
-      return 'dot-prop'
-    default:
-      return null
   }
+}
+
+const DOT_TITLES: Record<string, string> = {
+  'dot-field': 'Placeholder field',
+  'dot-binding': 'Bound to data',
+  'dot-generator': 'Generator-driven',
 }
 
 function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
@@ -88,7 +93,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
             {node.name}
           </span>
         )}
-        {dot && <span className={`layer-dot ${dot}`} title="Connected text" />}
+        {dot && <span className={`layer-dot ${dot}`} title={DOT_TITLES[dot]} />}
         {repeatBadge && <span className="layer-repeat-badge">⟳ {repeatBadge}</span>}
       </div>
       {!collapsed && children.map((c) => <LayerRow key={c} id={c} depth={depth + 1} />)}

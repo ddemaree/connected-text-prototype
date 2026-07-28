@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react'
-import { getByPath, resolveContent } from '../model/resolve'
+import { getByPath, instanceFieldValues, resolveText } from '../model/resolve'
 import type {
   AnyNode,
   AutoLayout,
@@ -24,26 +24,21 @@ export interface ContentChip {
 }
 
 /**
- * The chip shown for a text layer: its field markup when marked, otherwise its
- * content connection. Static text with field markup is its own state, so it
- * gets the hollow variant — nothing is connected, but it is in the schema.
+ * The chip shown for a text layer: only fields get one, labeled with the
+ * field's name. Placeholder (connection 'none') gets the hollow variant —
+ * marked, but nothing wired yet; generator/binding get their usual colors.
+ * Plain text carries no field, so no chip.
  */
 export function contentChip(node: AnyNode | undefined): ContentChip | null {
-  if (!node || node.type !== 'text') return null
-  const name = node.field?.name.trim()
-  const c = node.content
-  switch (c.type) {
-    case 'static':
-      return name ? { label: `⌁ ${name}`, cls: 'chip-field' } : null
+  if (!node || node.type !== 'text' || !node.field) return null
+  const label = `⌁ ${node.field.name}`
+  switch (node.field.connection.type) {
+    case 'none':
+      return { label, cls: 'chip-field' }
     case 'binding':
-      return { label: name ? `⌁ ${name}` : `{ } ${c.path}`, cls: 'chip-binding' }
+      return { label, cls: 'chip-binding' }
     case 'generator':
-      return {
-        label: name ? `⌁ ${name}` : `⚡ ${c.config.kind} · ${c.config.count} ${c.config.unit}`,
-        cls: 'chip-generator',
-      }
-    case 'prop':
-      return { label: name ? `⌁ ${name}` : `◇ ${c.prop}`, cls: 'chip-prop' }
+      return { label, cls: 'chip-generator' }
   }
 }
 
@@ -196,16 +191,9 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
   }
   if (ghost) style.pointerEvents = 'none'
 
-  // A component definition rendered on canvas (not through an instance)
-  // previews its prop-bound text using the props' default values.
-  let ctxForChildren = ctx
-  if (node.isComponent) {
-    ctxForChildren = {
-      ...ctx,
-      propValues: Object.fromEntries((node.props ?? []).map((p) => [p.name, p.defaultValue])),
-    }
-  }
-
+  // A component definition rendered directly on canvas (not through an
+  // instance) needs no special context: its fields' own connections ARE the
+  // definition's defaults, so they resolve the same way plain fields do.
   let childContent: React.ReactNode
   if (node.repeat && node.children.length > 0) {
     const templateId = node.children[0]
@@ -235,7 +223,7 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
       ))
     }
   } else {
-    childContent = node.children.map((c) => <NodeView key={c} id={c} ctx={ctxForChildren} ghost={ghost} />)
+    childContent = node.children.map((c) => <NodeView key={c} id={c} ctx={ctx} ghost={ghost} />)
   }
 
   return (
@@ -259,7 +247,10 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
   const setToast = useStore((s) => s.setToast)
   const editRef = useRef<HTMLDivElement | null>(null)
 
-  const resolved = resolveContent(node.content, doc, ctx)
+  const resolved = resolveText(node, doc, ctx)
+  // Plain text and placeholder fields are the layer's own text, so they're
+  // editable in place; a live connection owns the value instead.
+  const editable = !node.field || node.field.connection.type === 'none'
 
   const s = node.style
   const style: CSSProperties = {
@@ -330,17 +321,15 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
           : (e) => {
               e.stopPropagation()
               select([node.id])
-              if (node.content.type === 'static') {
+              if (editable) {
                 pushHistory()
                 setEditing(node.id)
               } else {
-                const label =
-                  node.content.type === 'binding'
-                    ? `data path “${node.content.path}”`
-                    : node.content.type === 'generator'
-                      ? 'a text generator'
-                      : `component prop “${node.content.prop}”`
-                setToast(`This text is connected to ${label} — edit its source in the Content panel, or Detach it to make it editable.`)
+                const connection = node.field!.connection
+                const label = connection.type === 'binding' ? `data path “${connection.path}”` : 'a text generator'
+                setToast(
+                  `This text is connected to ${label} — disconnect it in the Content panel to edit the placeholder.`,
+                )
               }
             }
       }
@@ -383,19 +372,11 @@ function InstanceView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps
     )
   }
 
-  // Resolve prop values in the *instance's* context (so overrides can use
-  // `item.x` bindings inside repeaters, generators vary per clone, etc.)
-  const propValues: Record<string, string> = {}
-  for (const prop of def.props ?? []) {
-    const source = node.overrides[prop.name] ?? { type: 'static' as const, value: prop.defaultValue }
-    propValues[prop.name] = resolveContent(source, doc, ctx).text
-  }
-
-  const innerCtx: RenderContext = {
-    ...ctx,
-    propValues,
-    seedOffset: (ctx.seedOffset ?? 0) + hashId(node.id),
-  }
+  // Only the fields this instance actually overrides get a value here — the
+  // rest fall through to their own definition connection, resolved in this
+  // same context so `item.*` bindings and generator variance still apply.
+  const innerCtx: RenderContext = { ...ctx, seedOffset: (ctx.seedOffset ?? 0) + hashId(node.id) }
+  const fieldValues = instanceFieldValues(doc, node, innerCtx)
 
   // The wrapper takes the instance's sizing but the definition's visual style.
   const style: CSSProperties = {
@@ -407,7 +388,7 @@ function InstanceView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps
   return (
     <div data-node-id={ghost ? undefined : node.id} style={style} {...events}>
       {def.children.map((c) => (
-        <NodeView key={c} id={c} ctx={innerCtx} ghost />
+        <NodeView key={c} id={c} ctx={{ ...innerCtx, fieldValues }} ghost />
       ))}
     </div>
   )

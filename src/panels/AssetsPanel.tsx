@@ -1,4 +1,5 @@
 import { Component, Plus } from 'lucide-react'
+import { componentFields } from '../model/resolve'
 import { listComponents, useStore } from '../store'
 
 export function AssetsPanel() {
@@ -25,18 +26,23 @@ export function AssetsPanel() {
           No components yet. Select a frame and use “Create component” in the inspector.
         </div>
       )}
-      {components.map((c) => (
-        <div key={c.id} className="asset-row">
-          <Component size={13} className="icon-component" />
-          <button className="asset-name" title="Select the definition" onClick={() => select([c.id])}>
-            {c.name}
-            <span className="asset-meta">{(c.props ?? []).length} props</span>
-          </button>
-          <button className="btn btn-component" disabled={devMode} onClick={() => insertAtCenter(c.id)}>
-            <Plus size={12} /> Insert
-          </button>
-        </div>
-      ))}
+      {components.map((c) => {
+        const fieldCount = componentFields(doc, c.id).length
+        return (
+          <div key={c.id} className="asset-row">
+            <Component size={13} className="icon-component" />
+            <button className="asset-name" title="Select the definition" onClick={() => select([c.id])}>
+              {c.name}
+              <span className="asset-meta">
+                {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
+              </span>
+            </button>
+            <button className="btn btn-component" disabled={devMode} onClick={() => insertAtCenter(c.id)}>
+              <Plus size={12} /> Insert
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -1106,3 +1106,110 @@ button {
   color: var(--danger);
   background: rgba(255, 107, 107, 0.08);
 }
+
+/* ===== Field-first ===== */
+
+/* A sub-heading inside a section: the connection block under a field block. */
+.insp-subhead {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.connection-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Unconnected: hollow, because nothing is wired up yet. */
+.chip-placeholder {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+  padding: 0.5px 5px;
+}
+
+.chip-component {
+  background: var(--component-soft);
+  color: var(--component);
+}
+
+.btn-repeater {
+  color: var(--repeater);
+  border-color: rgba(53, 194, 160, 0.4);
+}
+
+.btn-repeater:hover:not(:disabled) {
+  background: var(--repeater-soft);
+}
+
+/* A component's content API: one row per field. */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.field-row:hover {
+  background: #313131;
+}
+
+.field-row-name {
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace;
+  color: var(--component);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-row-intent {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.instance-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  background: #222;
+  border-radius: 6px;
+}
+
+.instance-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.instance-field-default {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.45;
+  max-height: 44px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+.link-btn {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.link-btn:hover {
+  color: var(--accent);
+}

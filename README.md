@@ -109,11 +109,38 @@ richest sibling becomes the template with its text bound to `item.*` paths.
 Adjacent inline spans (`<span class="name">` + `<span class="price">`)
 become separate fields. Every import is a single undo step.
 
+### Figma paste (design → design)
+Copy layers in Figma — or capture a webpage with Figma's Chrome extension —
+and paste anywhere on the canvas (or into the `</>` import dialog). Figma
+puts the whole scene fragment on the clipboard as a base64 blob inside the
+`text/html` flavor (`<!--(figma)…(/figma)-->`); the importer decodes it
+in-browser with no dependencies: the `fig-kiwi` container is unpacked, its
+chunks inflated with the native `DecompressionStream`, and the
+[Kiwi](https://github.com/evanw/kiwi)-encoded scene decoded against the
+schema that ships inside the payload (so it tracks Figma's schema changes).
+
+Frames, groups and shapes become frames (fills, strokes, corner radius);
+Figma auto layout maps onto ours (direction, gap, padding, alignment,
+hug/fill sizing); text keeps its size, weight, color, alignment, line
+height, letter spacing and casing. Component instances are resolved through
+their symbol with per-instance text overrides applied. The same
+repeated-sibling detection as HTML import then runs on the pasted tree —
+three or more alike cards collapse into a **collection-bound repeater**,
+with field names taken from Figma layer names ("Title", "Author" →
+`item.title`, `item.author`; auto-named text layers fall back to generic
+names). Cards that were hand-placed without auto layout still collapse when
+their geometry reads as a row, column or uniform grid — the layout is
+inferred first, then the repeat extracted. Vector contents, images and
+effects get placeholder treatment; rotation is ignored.
+
 ## How it works
 
 ```
 src/
   model/types.ts       # document model: nodes, sizing modes, content sources
+  model/importIr.ts    # shared import IR + repeated-sibling detection
+  model/htmlImport.ts  # HTML → IR
+  model/figmaImport.ts # Figma clipboard (fig-kiwi + Kiwi decoding) → IR
   model/generators.ts  # seeded PRNG dummy-text generators per kind/unit
   model/resolve.ts     # path lookup, content resolution, bindable-path listing
   model/seed.ts        # the demo document

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Canvas } from './editor/Canvas'
+import { isFigmaClipboard } from './model/figmaImport'
 import { DEFAULT_AUTO_LAYOUT } from './model/types'
 import { AssetsPanel } from './panels/AssetsPanel'
 import { DataPanel } from './panels/DataPanel'
@@ -89,7 +90,7 @@ function useKeyboardShortcuts() {
   }, [])
 }
 
-/** Pasting markup anywhere outside a field imports it onto the canvas. */
+/** Pasting markup or Figma layers anywhere outside a field imports them onto the canvas. */
 function usePasteImport() {
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -104,6 +105,10 @@ function usePasteImport() {
       }
       if (!html.trim()) return
       e.preventDefault()
+      if (isFigmaClipboard(html)) {
+        void state.importFigmaClipboardData(html)
+        return
+      }
       state.importHtmlMarkup(html)
     }
     window.addEventListener('paste', onPaste)

@@ -1,5 +1,6 @@
 import { CodeXml, Frame, MousePointer2, Redo2, RotateCcw, Type, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { isFigmaClipboard } from '../model/figmaImport'
 import { EXAMPLE_HTML } from '../model/htmlImport'
 import { useStore, type Tool } from '../store'
 
@@ -20,6 +21,7 @@ export function Toolbar() {
   const canRedo = useStore((s) => s.future.length > 0)
   const resetDoc = useStore((s) => s.resetDoc)
   const importHtmlMarkup = useStore((s) => s.importHtmlMarkup)
+  const importFigmaClipboardData = useStore((s) => s.importFigmaClipboardData)
   const [importOpen, setImportOpen] = useState(false)
   const [markup, setMarkup] = useState('')
 
@@ -91,7 +93,7 @@ export function Toolbar() {
       <div className="toolbar-group">
         <button
           className="tool-btn"
-          title="Import HTML — or paste markup on the canvas"
+          title="Import HTML or Figma layers — or paste onto the canvas"
           onClick={() => setImportOpen(true)}
         >
           <CodeXml size={15} />
@@ -118,10 +120,11 @@ export function Toolbar() {
           }}
         >
           <div className="modal-panel" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="modal-title">Import HTML</div>
+            <div className="modal-title">Import HTML or Figma layers</div>
             <div className="modal-hint">
               Blocks become frames, headings and paragraphs become text. Repeated structures (like a card
-              list) become a repeater with the content extracted to Data.
+              list) become a repeater with the content extracted to Data. Layers copied in Figma can be
+              pasted straight into this box — or anywhere on the canvas.
             </div>
             <textarea
               className="field modal-textarea"
@@ -129,8 +132,17 @@ export function Toolbar() {
               spellCheck={false}
               autoFocus
               value={markup}
-              placeholder="Paste HTML markup here…"
+              placeholder="Paste HTML markup or Figma layers here…"
               onChange={(e) => setMarkup(e.target.value)}
+              onPaste={(e) => {
+                // Figma's clipboard payload lives in the text/html flavor; a
+                // plain-text paste into the box would silently drop it.
+                const html = e.clipboardData.getData('text/html')
+                if (!html || !isFigmaClipboard(html)) return
+                e.preventDefault()
+                void importFigmaClipboardData(html)
+                setImportOpen(false)
+              }}
             />
             <div className="modal-actions">
               <button className="btn" onClick={() => setMarkup(EXAMPLE_HTML)}>

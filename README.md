@@ -97,14 +97,17 @@ Paste HTML anywhere on the canvas — or use the `</>` toolbar button for a
 paste-in dialog with a bundled example. Blocks become auto-layout frames,
 headings and paragraphs become styled text (inline `style=""` attributes are
 best-effort parsed; stylesheets are ignored — it's deliberately lossy), images
-and buttons get placeholder treatment. The interesting part: when a
-container's children share an identical structure (a card list, a product
-grid), the importer converts it into a **collection-bound repeater** — the
-content is extracted into a JSON collection in the Data panel (field names
-from class names or tag heuristics), and the template's text is bound to
-`item.*` paths. Adjacent inline spans (`<span class="name">` +
-`<span class="price">`) become separate fields. Every import is a single
-undo step.
+and buttons get placeholder treatment. A few Tailwind layout utilities
+(`flex`, `flex-col`, `grid`, `gap-*`, `p-*`) are honored as auto-layout
+hints. The interesting part: when a container's children repeat — same tag
+and class (structural variance allowed: optional excerpts, missing images),
+or identical structure for classless markup — the importer converts it into
+a **collection-bound repeater**. The content is extracted into a JSON
+collection in the Data panel (field names from class names, BEM-aware:
+`card__title` → `title`), items missing a field get an empty string, and the
+richest sibling becomes the template with its text bound to `item.*` paths.
+Adjacent inline spans (`<span class="name">` + `<span class="price">`)
+become separate fields. Every import is a single undo step.
 
 ## How it works
 

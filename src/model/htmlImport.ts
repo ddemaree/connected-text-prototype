@@ -217,6 +217,8 @@ interface IrCommon {
   name: string
   /** Sanitized first class (or id), used for field and collection names. */
   slug: string
+  /** Full semantic class, used to spot siblings that are the same kind of thing. */
+  identity: string
 }
 
 interface IrText extends IrCommon {
@@ -313,6 +315,54 @@ function parsePadding(style: Record<string, string>): { x: number | null; y: num
   return { x: left, y: top }
 }
 
+interface ClassLayout {
+  direction: 'row' | 'column' | null
+  wrap: boolean
+  gap: number | null
+  padX: number | null
+  padY: number | null
+  radius: number | null
+}
+
+const TW_RADIUS: Record<string, number> = { rounded: 6, 'rounded-lg': 8, 'rounded-xl': 12 }
+const TW_STEP = 4
+
+/** Utility classes carry the only layout signal in Tailwind-style markup. */
+function parseClassLayout(el: Element | null | undefined): ClassLayout {
+  const out: ClassLayout = { direction: null, wrap: false, gap: null, padX: null, padY: null, radius: null }
+  let flex = false
+  let grid = false
+  let row = false
+  let column = false
+  for (const raw of classTokens(el)) {
+    // Only the base breakpoint applies; `md:grid` describes a viewport we do not have.
+    if (raw.includes(':')) continue
+    const token = raw.replace(/^!/, '').toLowerCase()
+    if (token === 'flex') flex = true
+    else if (token === 'flex-col') column = true
+    else if (token === 'flex-row') row = true
+    else if (token === 'grid') grid = true
+    else if (token in TW_RADIUS) out.radius = TW_RADIUS[token]
+    else {
+      const m = /^(gap|p|px|py)-(\d*\.?\d+)$/.exec(token)
+      if (!m) continue
+      const v = parseFloat(m[2]) * TW_STEP
+      if (!Number.isFinite(v)) continue
+      if (m[1] === 'gap') out.gap = v
+      else if (m[1] === 'px') out.padX = v
+      else if (m[1] === 'py') out.padY = v
+      else {
+        out.padX = v
+        out.padY = v
+      }
+    }
+  }
+  if (column) out.direction = 'column'
+  else if (row || grid || flex) out.direction = 'row'
+  if (grid) out.wrap = true
+  return out
+}
+
 const WEIGHTS: TextStyle['fontWeight'][] = [400, 500, 600, 700, 800]
 
 function parseWeight(v: string | undefined): TextStyle['fontWeight'] | null {
@@ -373,10 +423,68 @@ function sanitize(v: string | null | undefined): string {
     .replace(/^-+|-+$/g, '')
 }
 
+function classTokens(el: Element | null | undefined): string[] {
+  const raw = el?.getAttribute('class')
+  if (!raw) return []
+  return raw.trim().split(/\s+/).filter(Boolean)
+}
+
+const UTILITY_CLASSES = new Set(['flex', 'grid', 'block', 'inline', 'hidden', 'rounded', 'container'])
+const UTILITY_PREFIXES = [
+  'flex-',
+  'grid-',
+  'm-',
+  'mx-',
+  'my-',
+  'mt-',
+  'mb-',
+  'ml-',
+  'mr-',
+  'p-',
+  'px-',
+  'py-',
+  'pt-',
+  'pb-',
+  'pl-',
+  'pr-',
+  'gap-',
+  'w-',
+  'h-',
+  'text-',
+  'bg-',
+  'rounded-',
+  'items-',
+  'justify-',
+  'object-',
+]
+
+/** Layout utilities (Tailwind and friends) say nothing about what a thing *is*. */
+function isUtilityClass(token: string): boolean {
+  if (!token) return true
+  // Variants (`md:grid`) and important markers (`!w-full`) are always utilities.
+  if (token.includes(':') || token.startsWith('!')) return true
+  if (/\d/.test(token)) return true
+  const t = token.toLowerCase()
+  return UTILITY_CLASSES.has(t) || UTILITY_PREFIXES.some((p) => t.startsWith(p))
+}
+
+/** First class that names the thing rather than its layout, e.g. 'post-summary-card__title'. */
+function semanticClass(el: Element | null | undefined): string {
+  for (const token of classTokens(el)) if (!isUtilityClass(token)) return token
+  return ''
+}
+
+/** What kind of thing this is, for matching against siblings. */
+function identityClass(el: Element | null | undefined): string {
+  return sanitize(semanticClass(el))
+}
+
 function slugFor(el: Element | null | undefined): string {
   if (!el) return ''
-  const cls = el.getAttribute('class')?.trim().split(/\s+/)[0]
-  return sanitize(cls) || sanitize(el.getAttribute('id'))
+  const cls = semanticClass(el)
+  // BEM: the block prefix is shared by every part, only the element half names it.
+  const bem = cls.includes('__') ? cls.slice(cls.lastIndexOf('__') + 2) : cls
+  return sanitize(bem) || sanitize(el.getAttribute('id'))
 }
 
 function tagOf(node: Node): string {
@@ -387,11 +495,14 @@ function isElement(node: Node): node is Element {
   return node.nodeType === Node.ELEMENT_NODE
 }
 
-/** Known block tags are blocks; unknown tags are blocks only if they wrap blocks. */
+/**
+ * Known block tags are blocks; every other tag — inline or unknown — is a block
+ * only when it wraps block content (`<a><h3>…</h3></a>` is a link around a heading).
+ */
 function isBlockElement(el: Element): boolean {
   const tag = tagOf(el)
   if (BLOCK_TAGS.has(tag)) return true
-  if (INLINE_TAGS.has(tag) || tag === 'img' || tag === 'button') return false
+  if (tag === 'img' || tag === 'button') return false
   for (const child of Array.from(el.children)) {
     const t = tagOf(child)
     if (SKIP_TAGS.has(t)) continue
@@ -462,6 +573,7 @@ function makeText(
   slug: string,
   text: string,
   styleEls: (Element | null | undefined)[],
+  identity = '',
 ): IrText {
   let style: TextStyle = { ...DEFAULT_TEXT_STYLE, ...TEXT_STYLES[tag] }
   for (const el of styleEls) style = applyInlineTextStyle(style, el)
@@ -470,6 +582,7 @@ function makeText(
     tag,
     name: textName(tag, slug),
     slug,
+    identity,
     text,
     style,
     widthMode: 'fill',
@@ -486,8 +599,9 @@ function textFromElement(el: Element): IrText | null {
   const innerTag = inner ? tagOf(inner) : null
   // A generic wrapper around a single inline element takes that element's identity.
   const styleTag = innerTag && !(tag in TEXT_STYLES) ? innerTag : tag
-  const slug = slugFor(el) || slugFor(inner)
-  return makeText(styleTag, slug, text, inner ? [el, inner] : [el])
+  // When the wrapper is generic the inner element is the one that names the content.
+  const slug = styleTag === innerTag ? slugFor(inner) || slugFor(el) : slugFor(el) || slugFor(inner)
+  return makeText(styleTag, slug, text, inner ? [el, inner] : [el], identityClass(el) || identityClass(inner))
 }
 
 /**
@@ -512,52 +626,68 @@ function textFromRun(run: Node[]): IrText | null {
   const els = run.filter(isElement).filter((el) => tagOf(el) !== 'br')
   const src = els.length === 1 ? els[0] : null
   const tag = src ? tagOf(src) : 'span'
-  return makeText(tag, slugFor(src), text, [src])
+  return makeText(tag, slugFor(src), text, [src], identityClass(src))
 }
 
 function makeFrame(el: Element | null, children: IrNode[], name: string, slug: string): IrFrame {
   const style = parseInlineStyle(el)
+  const cls = parseClassLayout(el)
   const pad = parsePadding(style)
   const tag = el ? tagOf(el) : 'div'
   const isList = tag === 'ul' || tag === 'ol'
-  const row =
-    !isList &&
-    style['display']?.trim().toLowerCase() === 'flex' &&
-    (style['flex-direction'] ?? 'row').trim().toLowerCase() === 'row'
+  // Inline style always wins over class hints.
+  let direction = cls.direction ?? 'column'
+  const display = style['display']?.trim().toLowerCase()
+  if (display === 'flex' || display === 'inline-flex') {
+    direction = (style['flex-direction'] ?? 'row').trim().toLowerCase().startsWith('column') ? 'column' : 'row'
+  }
+  if (isList) direction = 'column'
+  const gap = pxValue(style['gap']) ?? cls.gap
+  const padX = pad.x ?? cls.padX
+  const padY = pad.y ?? cls.padY
   return {
     kind: 'frame',
     tag,
     name,
     slug,
+    identity: identityClass(el),
     children,
     fill: parseFill(style),
-    cornerRadius: pxValue(style['border-radius']) ?? 0,
+    cornerRadius: pxValue(style['border-radius']) ?? cls.radius ?? 0,
     autoLayout: {
-      direction: row ? 'row' : 'column',
-      gap: pxValue(style['gap']) ?? 8,
-      paddingX: pad.x ?? 0,
-      paddingY: pad.y ?? 0,
+      direction,
+      gap: gap ?? 8,
+      paddingX: padX ?? 0,
+      paddingY: padY ?? 0,
       align: 'start',
       justify: 'start',
-      wrap: false,
+      wrap: cls.wrap,
     },
     widthMode: 'fill',
     heightMode: 'hug',
     width: 240,
     height: 100,
     styleWidth: pxValue(style['width']),
-    stylePadX: pad.x,
-    stylePadY: pad.y,
-    styleGap: pxValue(style['gap']),
+    stylePadX: padX,
+    stylePadY: padY,
+    styleGap: gap,
   }
 }
 
+/** The height attribute is the file's intrinsic size; past this it is not a layout hint. */
+const MAX_ATTR_IMAGE_HEIGHT = 400
+
 function imageFrame(el: Element): IrFrame {
   const style = parseInlineStyle(el)
-  const height = pxValue(style['height']) ?? pxValue(el.getAttribute('height') ?? undefined) ?? 160
+  const attrHeight = pxValue(el.getAttribute('height') ?? undefined)
+  const height =
+    pxValue(style['height']) ??
+    (attrHeight !== null && attrHeight <= MAX_ATTR_IMAGE_HEIGHT ? attrHeight : null) ??
+    160
   const slug = slugFor(el)
   const frame = makeFrame(null, [], 'Image', slug)
   frame.tag = 'img'
+  frame.identity = identityClass(el)
   frame.fill = '#d9d9d9'
   frame.cornerRadius = 6
   frame.heightMode = 'fixed'
@@ -570,6 +700,7 @@ function buttonFrame(el: Element): IrFrame {
   const slug = slugFor(el)
   const frame = makeFrame(null, [], slug || 'Button', slug)
   frame.tag = 'button'
+  frame.identity = identityClass(el)
   frame.fill = '#1e66d0'
   frame.cornerRadius = 6
   frame.widthMode = 'hug'
@@ -626,6 +757,11 @@ function convertChildren(el: Element): IrNode[] {
       continue
     }
     flush()
+    if (INLINE_TAGS.has(tagOf(node))) {
+      // An inline wrapper around blocks (a link around a heading) adds no layer.
+      out.push(...convertChildren(node))
+      continue
+    }
     const converted = convertElement(node)
     if (converted) out.push(converted)
   }
@@ -672,33 +808,71 @@ interface DetectResult {
   names: string[]
 }
 
+/**
+ * Siblings repeat when they are shaped alike, or — for real-world markup, where
+ * cards drop an excerpt or an image — when they are the same tag with the same
+ * semantic class. The looser rule needs that class: identical tags alone are not
+ * evidence of a collection.
+ */
+function isRepeatCandidate(kids: IrNode[]): boolean {
+  if (kids.length < 3) return false
+  const first = kids[0]
+  const sig = signature(first)
+  if (kids.every((k) => signature(k) === sig) && collectSlots(first).length > 0) return true
+  if (!first.identity) return false
+  return (
+    kids.every((k) => k.tag === first.tag && k.identity === first.identity) &&
+    kids.some((k) => collectSlots(k).length > 0)
+  )
+}
+
+/** The richest sibling makes the best template: variants only ever drop content. */
+function pickTemplate(kids: IrNode[]): IrNode {
+  let best = kids[0]
+  let bestCount = collectSlots(best).length
+  for (const kid of kids.slice(1)) {
+    const count = collectSlots(kid).length
+    if (count > bestCount) {
+      best = kid
+      bestCount = count
+    }
+  }
+  return best
+}
+
 function detectRepeats(frame: IrFrame, used: Set<string>, out: DetectResult): void {
   const kids = frame.children
-  if (kids.length >= 3) {
-    const sig = signature(kids[0])
-    if (kids.every((k) => signature(k) === sig) && collectSlots(kids[0]).length > 0) {
-      const template = kids[0]
-      const fields = fieldNamesFor(collectSlots(template))
-      const items = kids.map((kid) => {
-        const slots = collectSlots(kid)
-        const item: Record<string, string> = {}
-        fields.forEach((field, i) => {
-          item[field] = slots[i]?.text ?? ''
-        })
-        return item
+  if (isRepeatCandidate(kids)) {
+    const template = pickTemplate(kids)
+    const templateFields = fieldNamesFor(collectSlots(template))
+    // Items are keyed by field name, not position, so variants still line up.
+    const rows = kids.map((kid) => {
+      const slots = collectSlots(kid)
+      const fields = fieldNamesFor(slots)
+      const row: Record<string, string> = {}
+      fields.forEach((field, i) => {
+        row[field] = slots[i]?.text ?? ''
       })
-      const name = uniqueCollectionName(frame.slug || 'items', used)
-      used.add(name)
-      collectSlots(template).forEach((slot, i) => {
-        slot.binding = `item.${fields[i]}`
-      })
-      frame.children = [template]
-      frame.repeatPath = name
-      out.collections[name] = items
-      out.names.push(name)
-      // A repeater's template is not searched again: no repeater-in-repeater.
-      return
-    }
+      return row
+    })
+    const keys: string[] = [...templateFields]
+    for (const row of rows) for (const key of Object.keys(row)) if (!keys.includes(key)) keys.push(key)
+    const items = rows.map((row) => {
+      const item: Record<string, string> = {}
+      for (const key of keys) item[key] = row[key] ?? ''
+      return item
+    })
+    const name = uniqueCollectionName(frame.slug || 'items', used)
+    used.add(name)
+    collectSlots(template).forEach((slot, i) => {
+      slot.binding = `item.${templateFields[i]}`
+    })
+    frame.children = [template]
+    frame.repeatPath = name
+    out.collections[name] = items
+    out.names.push(name)
+    // A repeater's template is not searched again: no repeater-in-repeater.
+    return
   }
   for (const kid of kids) if (kid.kind === 'frame') detectRepeats(kid, used, out)
 }

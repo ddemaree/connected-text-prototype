@@ -9,6 +9,8 @@ import { useStore } from '../store'
 export function DataPanel() {
   const data = useStore((s) => s.doc.data)
   const setData = useStore((s) => s.setData)
+  // Editing data edits the document: dev mode reads it only.
+  const devMode = useStore((s) => s.mode === 'dev')
   const [text, setText] = useState(() => JSON.stringify(data, null, 2))
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -42,6 +44,7 @@ export function DataPanel() {
         className="data-editor"
         spellCheck={false}
         value={text}
+        readOnly={devMode}
         onChange={(e) => {
           setText(e.target.value)
           setDirty(true)
@@ -49,7 +52,7 @@ export function DataPanel() {
       />
       {error && <div className="data-error">{error}</div>}
       <div className="data-actions">
-        <button className="btn btn-primary" onClick={apply} disabled={!dirty}>
+        <button className="btn btn-primary" onClick={apply} disabled={devMode || !dirty}>
           Apply
         </button>
         <button
@@ -68,6 +71,7 @@ export function DataPanel() {
         <button
           className="btn"
           title="Restore the sample dataset"
+          disabled={devMode}
           onClick={() => {
             setData(structuredClone(SEED_DATA))
             setDirty(false)

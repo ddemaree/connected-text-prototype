@@ -5,6 +5,8 @@ export function AssetsPanel() {
   const doc = useStore((s) => s.doc)
   const insertInstance = useStore((s) => s.insertInstance)
   const select = useStore((s) => s.select)
+  // Inserting an instance edits the document: dev mode only navigates.
+  const devMode = useStore((s) => s.mode === 'dev')
   const components = listComponents(doc)
 
   const insertAtCenter = (componentId: string) => {
@@ -30,7 +32,7 @@ export function AssetsPanel() {
             {c.name}
             <span className="asset-meta">{(c.props ?? []).length} props</span>
           </button>
-          <button className="btn btn-component" onClick={() => insertAtCenter(c.id)}>
+          <button className="btn btn-component" disabled={devMode} onClick={() => insertAtCenter(c.id)}>
             <Plus size={12} /> Insert
           </button>
         </div>

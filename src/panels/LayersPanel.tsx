@@ -32,6 +32,8 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
   const select = useStore((s) => s.select)
   const setHovered = useStore((s) => s.setHovered)
   const renameNode = useStore((s) => s.renameNode)
+  // Renaming edits the document: dev mode keeps selection and hover only.
+  const devMode = useStore((s) => s.mode === 'dev')
   const [collapsed, setCollapsed] = useState(false)
   const [renaming, setRenaming] = useState(false)
   if (!node) return null
@@ -47,7 +49,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
         className={`layer-row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''}`}
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={(e) => select([id], e.shiftKey)}
-        onDoubleClick={() => setRenaming(true)}
+        onDoubleClick={devMode ? undefined : () => setRenaming(true)}
         onMouseEnter={() => setHovered(id)}
         onMouseLeave={() => setHovered(null)}
       >
@@ -65,7 +67,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
           <span className="layer-chevron" />
         )}
         <NodeIcon node={node} />
-        {renaming ? (
+        {renaming && !devMode ? (
           <input
             className="layer-rename"
             autoFocus

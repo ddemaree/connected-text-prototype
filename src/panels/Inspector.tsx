@@ -1,6 +1,8 @@
 import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowRight, Component, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
+import { GENERATOR_UNITS } from '../model/generators'
 import { listCollectionPaths, getByPath } from '../model/resolve'
+import { FIELD_INTENTS, pathLeaf, slugify } from '../model/schema'
 import {
   DEFAULT_AUTO_LAYOUT,
   type AnyNode,
@@ -26,6 +28,7 @@ import {
   Section,
   Segmented,
   SelectField,
+  TextArea,
   TextField,
 } from '../ui/controls'
 
@@ -48,6 +51,7 @@ export function Inspector() {
       {node.type === 'frame' && <FrameStyleSection node={node} />}
       {node.type === 'text' && <TextStyleSection node={node} />}
       {node.type === 'text' && <ContentSection node={node} />}
+      {node.type === 'text' && <ContentFieldSection node={node} />}
       {node.type === 'frame' && !node.isComponent && !node.repeat && <MakeComponentSection node={node} />}
       {node.type === 'frame' && node.isComponent && <ComponentSection node={node} />}
       {node.type === 'instance' && <InstanceSection node={node} />}
@@ -429,6 +433,96 @@ function SourceBadge({ source }: { source: ContentSource }) {
   const m = map[source.type]
   if (!m) return null
   return <span className={`content-chip ${m.cls}`}>{m.label}</span>
+}
+
+/**
+ * Content field semantics — orthogonal to Content (source): name, intent,
+ * description, and a max-length constraint that a static text can carry
+ * too, so "markup-only" content still lands in the published schema.
+ */
+function ContentFieldSection({ node }: { node: TextNode }) {
+  const setTextField = useStore((s) => s.setTextField)
+  const field = node.field
+
+  const markAsField = () => {
+    const source = node.content
+    const name = source.type === 'binding' ? pathLeaf(source.path) : source.type === 'prop' ? source.prop : ''
+    setTextField(node.id, {
+      name: name || slugify(node.name) || 'field',
+      intent: source.type === 'generator' ? source.config.kind : 'custom',
+      maxLength: source.type === 'generator' ? { unit: source.config.unit, count: source.config.count } : null,
+    })
+  }
+
+  if (!field) {
+    return (
+      <Section title="Content field">
+        <button className="btn btn-mark-field" onClick={markAsField}>
+          ＋ Mark as content field
+        </button>
+      </Section>
+    )
+  }
+
+  return (
+    <Section title="Content field" badge={<span className="content-chip chip-field">field</span>}>
+      <div className="content-field-set">
+        <Row label="Name">
+          <TextField value={field.name} onChange={(name) => setTextField(node.id, { ...field, name })} />
+        </Row>
+        <Row label="Intent">
+          <SelectField
+            value={field.intent}
+            options={FIELD_INTENTS}
+            onChange={(intent) => setTextField(node.id, { ...field, intent })}
+          />
+        </Row>
+        <Row label="Description">
+          <TextArea
+            value={field.description ?? ''}
+            rows={2}
+            placeholder="Notes for developers & editors"
+            onChange={(description) => setTextField(node.id, { ...field, description })}
+          />
+        </Row>
+        <Row label="Max length">
+          <NumberField
+            value={field.maxLength?.count ?? 1}
+            min={1}
+            disabled={!field.maxLength}
+            onChange={(count) =>
+              setTextField(node.id, { ...field, maxLength: { unit: field.maxLength?.unit ?? 'words', count } })
+            }
+          />
+          <SelectField
+            value={field.maxLength?.unit ?? 'words'}
+            disabled={!field.maxLength}
+            options={GENERATOR_UNITS}
+            onChange={(unit) =>
+              setTextField(node.id, { ...field, maxLength: { unit, count: field.maxLength?.count ?? 20 } })
+            }
+          />
+          <button
+            className="mini-btn"
+            title={field.maxLength ? 'Clear max length' : 'Set a max length'}
+            onClick={() =>
+              setTextField(node.id, { ...field, maxLength: field.maxLength ? null : { unit: 'words', count: 20 } })
+            }
+          >
+            {field.maxLength ? <X size={12} /> : <Plus size={12} />}
+          </button>
+        </Row>
+      </div>
+      {node.content.type === 'static' && (
+        <div className="insp-hint field-static-hint">
+          Static text with field markup — included in the published schema.
+        </div>
+      )}
+      <button className="btn btn-remove-field" onClick={() => setTextField(node.id, null)}>
+        Remove field
+      </button>
+    </Section>
+  )
 }
 
 function MakeComponentSection({ node }: { node: FrameNode }) {

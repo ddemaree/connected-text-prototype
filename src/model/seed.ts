@@ -128,31 +128,40 @@ export function buildSeedDoc(): DesignDoc {
       children: ['hero-kicker', 'hero-title', 'hero-tagline', 'hero-standfirst'],
     }),
   )
-  add(
-    text('hero-kicker', 'hero', 'Kicker', { type: 'static', value: 'This week' }, {
+  add({
+    // Static, but annotated — the "markup-only" schema story: no binding needed.
+    ...text('hero-kicker', 'hero', 'Kicker', { type: 'static', value: 'FROM THE EDITORS' }, {
       fontSize: 12,
       fontWeight: 700,
       letterSpacing: 1.2,
       uppercase: true,
       color: '#b04618',
     }),
-  )
-  add(
-    text('hero-title', 'hero', 'Site title', { type: 'binding', path: 'site.title' }, {
+    field: {
+      name: 'kicker',
+      intent: 'label',
+      maxLength: { unit: 'characters', count: 24 },
+      description: 'Short section label above the hero title.',
+    },
+  })
+  add({
+    ...text('hero-title', 'hero', 'Site title', { type: 'binding', path: 'site.title' }, {
       fontFamily: 'serif',
       fontSize: 40,
       fontWeight: 700,
       lineHeight: 1.1,
       color: '#141414',
     }),
-  )
-  add(
-    text('hero-tagline', 'hero', 'Tagline', { type: 'binding', path: 'site.tagline' }, {
+    field: { name: 'title', intent: 'title' },
+  })
+  add({
+    ...text('hero-tagline', 'hero', 'Tagline', { type: 'binding', path: 'site.tagline' }, {
       fontSize: 17,
       fontWeight: 500,
       color: '#6b6b6b',
     }),
-  )
+    field: { name: 'tagline', intent: 'standfirst', maxLength: { unit: 'words', count: 12 } },
+  })
   add(
     text(
       'hero-standfirst',
@@ -185,38 +194,42 @@ export function buildSeedDoc(): DesignDoc {
       ],
     }),
   )
-  add(
-    text('card-category', 'card', 'Category', { type: 'prop', prop: 'category' }, {
+  add({
+    ...text('card-category', 'card', 'Category', { type: 'prop', prop: 'category' }, {
       fontSize: 11,
       fontWeight: 700,
       letterSpacing: 1,
       uppercase: true,
       color: '#b04618',
     }),
-  )
-  add(
-    text('card-title', 'card', 'Title', { type: 'prop', prop: 'title' }, {
+    field: { name: 'category', intent: 'label' },
+  })
+  add({
+    ...text('card-title', 'card', 'Title', { type: 'prop', prop: 'title' }, {
       fontFamily: 'serif',
       fontSize: 20,
       fontWeight: 700,
       lineHeight: 1.25,
       color: '#141414',
     }),
-  )
-  add(
-    text('card-standfirst', 'card', 'Standfirst', { type: 'prop', prop: 'standfirst' }, {
+    field: { name: 'title', intent: 'title', maxLength: { unit: 'words', count: 12 } },
+  })
+  add({
+    ...text('card-standfirst', 'card', 'Standfirst', { type: 'prop', prop: 'standfirst' }, {
       fontSize: 13.5,
       color: '#5c5c5c',
       lineHeight: 1.5,
     }),
-  )
-  add(
-    text('card-byline', 'card', 'Byline', { type: 'prop', prop: 'author' }, {
+    field: { name: 'standfirst', intent: 'standfirst', maxLength: { unit: 'words', count: 24 } },
+  })
+  add({
+    ...text('card-byline', 'card', 'Byline', { type: 'prop', prop: 'author' }, {
       fontSize: 12,
       fontWeight: 600,
       color: '#8a8a8a',
     }),
-  )
+    field: { name: 'author', intent: 'name' },
+  })
 
   // ---- Repeater grid bound to the articles collection ----
   add(
@@ -300,24 +313,27 @@ export function buildSeedDoc(): DesignDoc {
       children: ['pg-label', 'pg-title', 'pg-para'],
     }),
   )
-  add(
-    text('pg-label', 'playground', 'Generated label', {
+  add({
+    ...text('pg-label', 'playground', 'Generated label', {
       type: 'generator',
       config: { kind: 'label', unit: 'words', count: 2, seed: 7 },
     }, { fontSize: 11, fontWeight: 700, letterSpacing: 1.1, uppercase: true, color: '#2f6f4f' }),
-  )
-  add(
-    text('pg-title', 'playground', 'Generated title', {
+    field: { name: 'label', intent: 'label' },
+  })
+  add({
+    ...text('pg-title', 'playground', 'Generated title', {
       type: 'generator',
       config: { kind: 'title', unit: 'words', count: 6, seed: 11 },
     }, { fontFamily: 'serif', fontSize: 28, fontWeight: 700, lineHeight: 1.2, color: '#141414' }),
-  )
-  add(
-    text('pg-para', 'playground', 'Generated paragraph', {
+    field: { name: 'title', intent: 'title' },
+  })
+  add({
+    ...text('pg-para', 'playground', 'Generated paragraph', {
       type: 'generator',
       config: { kind: 'paragraph', unit: 'sentences', count: 3, seed: 23 },
     }, { fontSize: 14, color: '#3d3d3d', lineHeight: 1.6 }),
-  )
+    field: { name: 'paragraph', intent: 'paragraph' },
+  })
 
   return {
     nodes,

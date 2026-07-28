@@ -102,10 +102,12 @@ export function TextArea({
   value,
   onChange,
   rows = 3,
+  placeholder,
 }: {
   value: string
   onChange: (v: string) => void
   rows?: number
+  placeholder?: string
 }) {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
@@ -114,6 +116,7 @@ export function TextArea({
       className="field textarea-field"
       rows={rows}
       value={text}
+      placeholder={placeholder}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => text !== value && onChange(text)}
     />

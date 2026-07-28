@@ -1064,3 +1064,50 @@ button {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ===== Content fields ===== */
+
+.btn-mark-field {
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+}
+
+.btn-mark-field:hover:not(:disabled) {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.content-field-set {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.field-static-hint {
+  color: var(--accent);
+}
+
+.btn-remove-field {
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+}
+
+.btn-remove-field:hover:not(:disabled) {
+  color: var(--danger);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.chip-field {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

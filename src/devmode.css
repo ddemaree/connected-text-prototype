@@ -47,9 +47,8 @@
 .content-chip.dev-chip {
   position: absolute;
   left: 0;
-  bottom: 100%;
-  margin-bottom: 3px;
-  transform-origin: left bottom;
+  top: 0;
+  transform-origin: left top;
   z-index: 3;
   pointer-events: none;
   background: #1e1e1e;

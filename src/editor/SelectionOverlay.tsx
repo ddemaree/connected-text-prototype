@@ -138,7 +138,8 @@ export function SelectionOverlay({ containerRef }: { containerRef: React.RefObje
       )}
       {state.selected.map((r) => {
         const node = nodes[r.id]
-        const chip = contentChip(node)
+        // Dev mode already shows the always-on canvas annotation — don't double up.
+        const chip = devMode ? null : contentChip(node)
         const isEditing = editingId === r.id
         return (
           <div

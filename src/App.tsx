@@ -31,6 +31,12 @@ function useKeyboardShortcuts() {
         state.setMode(state.mode === 'dev' ? 'design' : 'dev')
         return
       }
+      // Escape only clears selection, so it works in either mode.
+      if (e.key === 'Escape') {
+        state.select([])
+        if (state.mode === 'design') state.setTool('select')
+        return
+      }
       // Dev mode is inspect-only: nothing below this line may touch the document.
       if (state.mode === 'dev') return
 
@@ -76,10 +82,6 @@ function useKeyboardShortcuts() {
             e.preventDefault()
             state.deleteNodes(state.selection)
           }
-          break
-        case 'Escape':
-          state.select([])
-          state.setTool('select')
           break
         case 'ArrowLeft':
         case 'ArrowRight':

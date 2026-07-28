@@ -162,15 +162,16 @@ export function buildSeedDoc(): DesignDoc {
     }),
     field: { name: 'tagline', intent: 'standfirst', maxLength: { unit: 'words', count: 12 } },
   })
-  add(
-    text(
+  add({
+    ...text(
       'hero-standfirst',
       'hero',
       'Generated standfirst',
       { type: 'generator', config: { kind: 'standfirst', unit: 'words', count: 18, seed: 42 } },
       { fontSize: 15, color: '#3d3d3d', lineHeight: 1.5 },
     ),
-  )
+    field: { name: 'standfirst', intent: 'standfirst' },
+  })
 
   // ---- Article card component ----
   add(

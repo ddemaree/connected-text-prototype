@@ -346,7 +346,11 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
       }
     >
       {chip && (
-        <span className={`dev-chip content-chip ${chip.cls}`} style={{ transform: `scale(${chipScale})` }}>
+        <span
+          className={`dev-chip content-chip ${chip.cls}`}
+          // Straddle the text's top edge so tight stacks stay legible under it.
+          style={{ transform: `translateY(-55%) scale(${chipScale})` }}
+        >
           {chip.label}
         </span>
       )}

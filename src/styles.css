@@ -1106,8 +1106,3 @@ button {
   color: var(--danger);
   background: rgba(255, 107, 107, 0.08);
 }
-
-.chip-field {
-  background: var(--accent-soft);
-  color: var(--accent);
-}

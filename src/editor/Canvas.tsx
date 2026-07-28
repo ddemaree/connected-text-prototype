@@ -39,6 +39,7 @@ export function Canvas() {
   const viewport = useStore((s) => s.viewport)
   const setViewport = useStore((s) => s.setViewport)
   const tool = useStore((s) => s.tool)
+  const devMode = useStore((s) => s.mode === 'dev')
   const rootIds = useStore((s) => s.doc.rootIds)
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
@@ -243,7 +244,8 @@ export function Canvas() {
       }
       if (e.button !== 0) return
 
-      if (state.tool === 'frame' || state.tool === 'text') {
+      // Drawing is a design-mode affordance; dev mode only pans, zooms and selects.
+      if (state.mode === 'design' && (state.tool === 'frame' || state.tool === 'text')) {
         // Find the deepest frame under the pointer that can accept children.
         let parentId: NodeId | null = null
         let parentLeft = 0
@@ -291,6 +293,12 @@ export function Canvas() {
       if (e.button === 1) return // bubble up so middle-drag pans
       if (e.button !== 0) return
       if (spaceDown) return // bubble up to pan
+      if (state.mode === 'dev') {
+        // Inspect-only: select the layer, but never start a move drag.
+        e.stopPropagation()
+        state.select([id], e.shiftKey)
+        return
+      }
       e.stopPropagation()
       if (state.editingId && state.editingId !== id) {
         // Clicking outside the edited text: the blur handler commits it.
@@ -325,9 +333,13 @@ export function Canvas() {
     [beginWindowDrag, spaceDown],
   )
 
-  const interaction = useMemo<InteractionApi>(() => ({ onNodePointerDown }), [onNodePointerDown])
+  const interaction = useMemo<InteractionApi>(
+    () => ({ onNodePointerDown, devMode }),
+    [onNodePointerDown, devMode],
+  )
 
-  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : tool !== 'select' ? 'crosshair' : 'default'
+  const drawing = !devMode && tool !== 'select'
+  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : drawing ? 'crosshair' : 'default'
 
   return (
     <InteractionContext.Provider value={interaction}>

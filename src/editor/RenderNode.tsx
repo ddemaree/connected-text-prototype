@@ -18,6 +18,35 @@ const FONT_STACKS: Record<TextNode['style']['fontFamily'], string> = {
   mono: "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
 }
 
+export interface ContentChip {
+  label: string
+  cls: string
+}
+
+/**
+ * The chip shown for a text layer: its field markup when marked, otherwise its
+ * content connection. Static text with field markup is its own state, so it
+ * gets the hollow variant — nothing is connected, but it is in the schema.
+ */
+export function contentChip(node: AnyNode | undefined): ContentChip | null {
+  if (!node || node.type !== 'text') return null
+  const name = node.field?.name.trim()
+  const c = node.content
+  switch (c.type) {
+    case 'static':
+      return name ? { label: `⌁ ${name}`, cls: 'chip-field' } : null
+    case 'binding':
+      return { label: name ? `⌁ ${name}` : `{ } ${c.path}`, cls: 'chip-binding' }
+    case 'generator':
+      return {
+        label: name ? `⌁ ${name}` : `⚡ ${c.config.kind} · ${c.config.count} ${c.config.unit}`,
+        cls: 'chip-generator',
+      }
+    case 'prop':
+      return { label: name ? `⌁ ${name}` : `◇ ${c.prop}`, cls: 'chip-prop' }
+  }
+}
+
 const ALIGN_MAP = { start: 'flex-start', center: 'center', end: 'flex-end' } as const
 const JUSTIFY_MAP = {
   start: 'flex-start',
@@ -218,7 +247,10 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
 
 function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<TextNode>) {
   const events = useNodeEvents(node.id, ghost)
+  const { devMode } = useInteraction()
   const doc = useStore((s) => s.doc)
+  // Chips keep a constant screen size; only dev mode subscribes to zoom.
+  const chipScale = useStore((s) => (s.mode === 'dev' ? 1 / s.viewport.zoom : 1))
   const editing = useStore((s) => s.editingId === node.id && !ghost)
   const setEditing = useStore((s) => s.setEditing)
   const select = useStore((s) => s.select)
@@ -247,6 +279,10 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
   if (node.heightMode === 'fixed') style.overflow = 'hidden'
   if (ghost) style.pointerEvents = 'none'
   if (resolved.missing) style.opacity = 0.45
+
+  // Dev mode shows annotations by default, like Figma's inspect view.
+  const chip = devMode && !ghost ? contentChip(node) : null
+  if (chip && style.position !== 'absolute') style.position = 'relative'
 
   useLayoutEffect(() => {
     if (editing && editRef.current) {
@@ -289,7 +325,7 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
       style={style}
       {...events}
       onDoubleClick={
-        ghost
+        ghost || devMode
           ? undefined
           : (e) => {
               e.stopPropagation()
@@ -309,6 +345,11 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
             }
       }
     >
+      {chip && (
+        <span className={`dev-chip content-chip ${chip.cls}`} style={{ transform: `scale(${chipScale})` }}>
+          {chip.label}
+        </span>
+      )}
       {resolved.missing ? `⚠ ${resolved.text}` : resolved.text || ' '}
     </div>
   )

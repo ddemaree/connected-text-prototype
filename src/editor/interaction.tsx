@@ -3,10 +3,13 @@ import type { NodeId } from '../model/types'
 
 export interface InteractionApi {
   onNodePointerDown: (e: React.PointerEvent, id: NodeId) => void
+  /** Dev mode is inspect-only: no drawing, dragging or text editing. */
+  devMode: boolean
 }
 
 export const InteractionContext = createContext<InteractionApi>({
   onNodePointerDown: () => {},
+  devMode: false,
 })
 
 export function useInteraction() {

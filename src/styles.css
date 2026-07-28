@@ -518,6 +518,30 @@ button {
   font-weight: 600;
 }
 
+.preset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.preset-row:hover {
+  background: #313131;
+}
+
+.preset-dims {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- fields ---------- */
 
 .field {

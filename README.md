@@ -37,7 +37,9 @@ The canvas seeds with four top-level frames that exercise everything:
 ### Layout primitives
 - **Frames** (`F`, drag to draw — drawing inside a frame nests it) and
   **text frames** (`T`, click or drag). Frames have fill, stroke, radius,
-  shadow, clip.
+  shadow, clip. With the frame tool active, the inspector offers **size
+  presets** (Desktop 1200×960, Web, Tablet, Phone, Card, Square) that place
+  a frame centered in the viewport.
 - **Auto layout** (`Shift+A` or the inspector): direction, gap, padding,
   alignment, distribution, and wrap. Children can size **Fixed / Hug / Fill**
   per axis. Dragging a child of an auto-layout frame reorders it; removing

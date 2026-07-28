@@ -30,9 +30,11 @@ import {
 } from '../ui/controls'
 
 export function Inspector() {
+  const tool = useStore((s) => s.tool)
   const selection = useStore((s) => s.selection)
   const nodes = useStore((s) => s.doc.nodes)
 
+  if (tool === 'frame') return <FramePresetsSection />
   if (selection.length === 0) return <EmptyInspector />
   if (selection.length > 1) return <MultiInspector count={selection.length} />
   const node = nodes[selection[0]]
@@ -70,6 +72,42 @@ function EmptyInspector() {
           <li>Make a frame a <b>repeater</b> to clone its first child from data</li>
         </ul>
       </div>
+    </div>
+  )
+}
+
+const FRAME_PRESETS: { name: string; w: number; h: number }[] = [
+  { name: 'Desktop', w: 1200, h: 960 },
+  { name: 'Web', w: 1440, h: 1024 },
+  { name: 'Tablet', w: 834, h: 1194 },
+  { name: 'Phone', w: 390, h: 844 },
+  { name: 'Card', w: 360, h: 240 },
+  { name: 'Square', w: 480, h: 480 },
+]
+
+function FramePresetsSection() {
+  const addFrameAt = useStore((s) => s.addFrameAt)
+
+  const insertPreset = (name: string, w: number, h: number) => {
+    const v = useStore.getState().viewport
+    const el = document.querySelector('.canvas-container')
+    const r = el?.getBoundingClientRect()
+    const cx = r ? (r.width / 2 - v.x) / v.zoom : w / 2
+    const cy = r ? (r.height / 2 - v.y) / v.zoom : h / 2
+    addFrameAt(null, Math.round(cx - w / 2), Math.round(cy - h / 2), w, h, name)
+  }
+
+  return (
+    <div className="inspector">
+      <Section title="Frame presets">
+        {FRAME_PRESETS.map((p) => (
+          <button key={p.name} className="preset-row" onClick={() => insertPreset(p.name, p.w, p.h)}>
+            <span>{p.name}</span>
+            <span className="preset-dims">{p.w} × {p.h}</span>
+          </button>
+        ))}
+        <div className="insp-hint">…or drag on the canvas to draw a frame at any size.</div>
+      </Section>
     </div>
   )
 }

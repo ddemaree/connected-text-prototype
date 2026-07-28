@@ -68,7 +68,7 @@ interface EditorState {
   renameNode: (id: NodeId, name: string) => void
   setAutoLayout: (id: NodeId, al: AutoLayout | null, baked?: Record<NodeId, { x: number; y: number; width: number; height: number }>) => void
   patchAutoLayout: (id: NodeId, patch: Partial<AutoLayout>) => void
-  addFrameAt: (parentId: NodeId | null, x: number, y: number, w: number, h: number) => NodeId
+  addFrameAt: (parentId: NodeId | null, x: number, y: number, w: number, h: number, name?: string) => NodeId
   addTextAt: (parentId: NodeId | null, x: number, y: number, width?: number) => NodeId
   deleteNodes: (ids: NodeId[]) => void
   duplicateNodes: (ids: NodeId[]) => void
@@ -309,13 +309,13 @@ export const useStore = create<EditorState>()(
           if (node?.type === 'frame' && node.autoLayout) Object.assign(node.autoLayout, patch)
         }),
 
-      addFrameAt: (parentId, x, y, w, h) => {
+      addFrameAt: (parentId, x, y, w, h, name = 'Frame') => {
         const id = newId('frame')
         withHistory((s) => {
           const node: FrameNode = {
             id,
             type: 'frame',
-            name: 'Frame',
+            name,
             parentId,
             x,
             y,

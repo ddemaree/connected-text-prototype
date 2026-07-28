@@ -1,16 +1,18 @@
 import { GENERATOR_KINDS } from './generators'
-import { getByPath, resolveContent } from './resolve'
+import { componentFields, getByPath, resolveOverride, resolveText } from './resolve'
 import {
+  DEFAULT_FIELD_NAME_RE,
   newId,
   type AnyNode,
-  type ContentSource,
   type DesignDoc,
+  type FieldConnection,
   type FieldIntent,
-  type FieldMeta,
   type FrameNode,
   type GeneratorUnit,
   type NodeId,
+  type OverrideValue,
   type RenderContext,
+  type TextField,
   type TextNode,
 } from './types'
 
@@ -22,8 +24,11 @@ export interface SchemaField {
   type: 'string' | 'number' | 'boolean'
   description?: string
   constraint?: { unit: GeneratorUnit; count: number } | null
-  source: 'static' | 'binding' | 'generator' | 'prop' | 'mixed'
+  /** Where the field's value comes from — its point on the connection ladder. */
+  source: 'placeholder' | 'generator' | 'binding' | 'mixed'
   bindingPath?: string
+  /** Still carrying an auto-assigned name (text_field_N) — contract hygiene lint. */
+  defaultNamed: boolean
   /** Text (or instance) nodes that contribute this field. */
   nodeIds: NodeId[]
   /** Resolved current text of the first contributor. */
@@ -39,12 +44,18 @@ export interface SchemaType {
   sourceId: NodeId
   /** Collections only: resolved item count. */
   itemCount?: number
+  /** Collections only: bound to data, or a count-mode placeholder. */
+  state?: 'bound' | 'placeholder'
   fields: SchemaField[]
 }
 
 export interface DerivedSchema {
   types: SchemaType[]
-  /** Text nodes that are annotated or non-static. */
+  /** Fields across all types — the size of the contract. */
+  fieldCount: number
+  /** Fields still named text_field_N. */
+  defaultNamedCount: number
+  /** Text nodes designated as fields. */
   structuredTextCount: number
   totalTextCount: number
 }
@@ -126,11 +137,6 @@ export function pathLeaf(path: string): string {
   return last === 'item' ? '' : last
 }
 
-function isItemPath(path: string): boolean {
-  const p = path.trim()
-  return p === 'item' || p.startsWith('item.') || p.startsWith('item[')
-}
-
 function inferType(v: unknown): SchemaField['type'] | null {
   if (typeof v === 'string') return 'string'
   if (typeof v === 'number') return 'number'
@@ -163,15 +169,19 @@ function subtree(doc: DesignDoc, id: NodeId): NodeId[] {
 }
 
 /**
- * The nearest enclosing thing that owns a node's content: a component
- * definition, or the template child of a collection-bound repeater.
+ * The nearest enclosing thing that owns a node's fields: a component
+ * definition, or the template child of a repeater. Everything else belongs to
+ * its root frame's singleton.
  */
-function contentOwner(doc: DesignDoc, id: NodeId): { kind: 'collection' | 'component'; id: NodeId } | null {
+export function fieldOwner(
+  doc: DesignDoc,
+  id: NodeId,
+): { kind: 'collection' | 'component'; id: NodeId } | null {
   let child: AnyNode | null = null
   let cur: AnyNode | undefined = doc.nodes[id]
   while (cur) {
     if (cur.type === 'frame' && cur.isComponent) return { kind: 'component', id: cur.id }
-    if (cur.type === 'frame' && cur.repeat?.mode === 'collection' && child && cur.children[0] === child.id) {
+    if (cur.type === 'frame' && cur.repeat && child && cur.children[0] === child.id) {
       return { kind: 'collection', id: cur.id }
     }
     child = cur
@@ -199,6 +209,7 @@ interface Contribution {
   constraint?: { unit: GeneratorUnit; count: number } | null
   source: SchemaField['source']
   bindingPath?: string
+  defaultNamed: boolean
   nodeIds: NodeId[]
   sampleValue: string
 }
@@ -209,87 +220,79 @@ interface TypeDraft {
   kind: SchemaType['kind']
   sourceId: NodeId
   itemCount?: number
+  state?: SchemaType['state']
   contributions: Contribution[]
 }
 
-function intentFor(field: FieldMeta | null | undefined, source: ContentSource): FieldIntent {
-  if (field?.intent) return field.intent
-  return source.type === 'generator' ? source.config.kind : 'custom'
+/** A connection (or an instance override) reduced to its schema source string. */
+function sourceOf(c: FieldConnection | OverrideValue): SchemaField['source'] {
+  if (c.type === 'binding') return 'binding'
+  if (c.type === 'generator') return 'generator'
+  return 'placeholder'
 }
 
-function constraintFor(
-  field: FieldMeta | null | undefined,
-  source: ContentSource,
-): { unit: GeneratorUnit; count: number } | null {
-  if (field?.maxLength) return { ...field.maxLength }
-  if (source.type === 'generator') return { unit: source.config.unit, count: source.config.count }
-  return null
+function bindingOf(c: FieldConnection | OverrideValue): string | undefined {
+  return c.type === 'binding' ? c.path : undefined
 }
 
-function nameFor(node: TextNode): string {
-  if (node.field?.name.trim()) return node.field.name.trim()
-  if (node.content.type === 'binding') {
-    const leaf = pathLeaf(node.content.path)
-    if (leaf) return leaf
-  }
-  if (node.content.type === 'prop') return node.content.prop
-  return slugify(node.name) || 'field'
-}
-
-function contributionFromText(
-  node: TextNode,
-  doc: DesignDoc,
-  ctx: RenderContext,
-  type: SchemaField['type'],
-): Contribution {
+/** Field metadata (name/intent/description/constraint) shared by every code path. */
+function baseContribution(field: TextField, nodeId: NodeId): Contribution {
   const contribution: Contribution = {
-    name: nameFor(node),
-    intent: intentFor(node.field, node.content),
-    type,
-    source: node.content.type,
-    nodeIds: [node.id],
-    sampleValue: resolveContent(node.content, doc, ctx).text,
+    name: field.name,
+    intent: field.intent,
+    type: 'string',
+    source: 'placeholder',
+    defaultNamed: DEFAULT_FIELD_NAME_RE.test(field.name),
+    nodeIds: [nodeId],
+    sampleValue: '',
   }
-  const description = node.field?.description?.trim()
+  const description = field.description?.trim()
   if (description) contribution.description = description
-  const constraint = constraintFor(node.field, node.content)
-  if (constraint) contribution.constraint = constraint
-  if (node.content.type === 'binding') contribution.bindingPath = node.content.path
+  if (field.maxLength) contribution.constraint = { ...field.maxLength }
   return contribution
 }
 
-/** Text nodes inside a component definition, indexed by the prop they read. */
-function propBoundTexts(doc: DesignDoc, componentId: NodeId): Map<string, TextNode[]> {
-  const out = new Map<string, TextNode[]>()
-  for (const id of subtree(doc, componentId)) {
-    const node = doc.nodes[id]
-    if (node?.type !== 'text' || node.content.type !== 'prop') continue
-    const list = out.get(node.content.prop)
-    if (list) list.push(node)
-    else out.set(node.content.prop, [node])
+function contributionFromText(node: TextNode, field: TextField, doc: DesignDoc, ctx: RenderContext): Contribution {
+  const contribution = baseContribution(field, node.id)
+  contribution.source = sourceOf(field.connection)
+  contribution.bindingPath = bindingOf(field.connection)
+  contribution.sampleValue = resolveText(node, doc, ctx).text
+  if (contribution.bindingPath) {
+    contribution.type = inferType(getByPath(doc.data, contribution.bindingPath, ctx)) ?? 'string'
   }
-  return out
+  return contribution
 }
 
-function collectionDraft(doc: DesignDoc, frame: FrameNode, path: string): TypeDraft {
-  const collection = getByPath(doc.data, path)
-  const items = Array.isArray(collection) ? collection : []
+/**
+ * A collection type for any repeater whose template carries fields. Bound
+ * repeaters name themselves from the data path; count-mode ones are the
+ * repeater's placeholder state — dummy cardinality, real field list.
+ */
+function collectionDraft(doc: DesignDoc, frame: FrameNode): TypeDraft | null {
+  const repeat = frame.repeat
+  if (!repeat) return null
+  const templateId = frame.children[0]
+  if (!templateId) return null
+
+  const bound = repeat.mode === 'collection'
+  const raw = bound ? getByPath(doc.data, repeat.path) : undefined
+  const items = Array.isArray(raw) ? raw : []
   const firstItem = items[0]
   const ctx: RenderContext = { item: firstItem, index: 0 }
-  const leaf = pathLeaf(path) || slugify(frame.name) || 'items'
+  const label = (bound ? pathLeaf(repeat.path) : '') || slugify(frame.name) || 'items'
+
   const draft: TypeDraft = {
-    key: slugify(leaf) || 'items',
-    name: titleCase(leaf) || frame.name,
+    key: slugify(label) || 'items',
+    name: titleCase(label) || frame.name,
     kind: 'collection',
     sourceId: frame.id,
-    itemCount: items.length,
+    itemCount: bound ? items.length : repeat.count,
+    state: bound ? 'bound' : 'placeholder',
     contributions: [],
   }
 
-  const templateId = frame.children[0]
-  if (!templateId) return draft
-
   const typeOf = (bindingPath: string | undefined, name: string): SchemaField['type'] => {
+    if (!bound) return 'string'
     const value = bindingPath ? getByPath(doc.data, bindingPath, ctx) : getByPath(firstItem, name)
     return inferType(value) ?? 'string'
   }
@@ -297,56 +300,37 @@ function collectionDraft(doc: DesignDoc, frame: FrameNode, path: string): TypeDr
   for (const id of subtree(doc, templateId)) {
     const node = doc.nodes[id]
     if (!node) continue
-    const owner = contentOwner(doc, id)
+    const owner = fieldOwner(doc, id)
     if (owner?.kind !== 'collection' || owner.id !== frame.id) continue
 
-    if (node.type === 'text') {
-      const bound = node.content.type === 'binding' && isItemPath(node.content.path)
-      if (!bound && !node.field) continue
-      const partial = contributionFromText(node, doc, ctx, 'string')
-      partial.type = typeOf(partial.bindingPath, partial.name)
-      draft.contributions.push(partial)
+    if (node.type === 'text' && node.field) {
+      const contribution = contributionFromText(node, node.field, doc, ctx)
+      contribution.type = typeOf(contribution.bindingPath, contribution.name)
+      draft.contributions.push(contribution)
       continue
     }
 
     if (node.type === 'instance') {
-      // An instance in the template carries the collection's fields on its
-      // `item.*` prop overrides; the definition's field markup names them.
-      const def = doc.nodes[node.componentId]
-      const metaByProp = new Map<string, FieldMeta>()
-      const propOrder: string[] = []
-      if (def?.type === 'frame') {
-        for (const [prop, texts] of propBoundTexts(doc, def.id)) {
-          const marked = texts.find((t) => t.field)
-          if (marked?.field) metaByProp.set(prop, marked.field)
-        }
-        for (const p of def.props ?? []) propOrder.push(p.name)
-      }
-      for (const prop of Object.keys(node.overrides)) if (!propOrder.includes(prop)) propOrder.push(prop)
-
-      for (const prop of propOrder) {
-        const source = node.overrides[prop]
-        if (source?.type !== 'binding' || !isItemPath(source.path)) continue
-        const meta = metaByProp.get(prop)
-        const name = meta?.name.trim() || pathLeaf(source.path) || prop
-        const contribution: Contribution = {
-          name,
-          intent: meta?.intent ?? 'custom',
-          type: typeOf(source.path, name),
-          source: 'binding',
-          bindingPath: source.path,
-          nodeIds: [node.id],
-          sampleValue: resolveContent(source, doc, ctx).text,
-        }
-        if (meta?.description?.trim()) contribution.description = meta.description.trim()
-        if (meta?.maxLength) contribution.constraint = { ...meta.maxLength }
+      // An instance template exposes the definition's fields; the instance's
+      // overrides say how each one is wired for this collection.
+      for (const { node: defNode, field } of componentFields(doc, node.componentId)) {
+        const override = node.overrides[field.name]
+        const contribution = baseContribution(field, node.id)
+        contribution.source = sourceOf(override ?? field.connection)
+        contribution.bindingPath = bindingOf(override ?? field.connection)
+        contribution.sampleValue = override
+          ? resolveOverride(override, doc, ctx).text
+          : resolveText(defNode, doc, ctx).text
+        contribution.type = typeOf(contribution.bindingPath, contribution.name)
         draft.contributions.push(contribution)
       }
     }
   }
-  return draft
+
+  return draft.contributions.length ? draft : null
 }
 
+/** A component's fields ARE its content API; the definition supplies defaults. */
 function componentDraft(doc: DesignDoc, frame: FrameNode): TypeDraft {
   const draft: TypeDraft = {
     key: slugify(frame.name) || 'component',
@@ -355,41 +339,8 @@ function componentDraft(doc: DesignDoc, frame: FrameNode): TypeDraft {
     sourceId: frame.id,
     contributions: [],
   }
-  const byProp = propBoundTexts(doc, frame.id)
-  const ctx: RenderContext = {
-    propValues: Object.fromEntries((frame.props ?? []).map((p) => [p.name, p.defaultValue])),
-  }
-
-  for (const prop of frame.props ?? []) {
-    const texts = (byProp.get(prop.name) ?? []).filter((t) => {
-      const owner = contentOwner(doc, t.id)
-      return owner?.kind === 'component' && owner.id === frame.id
-    })
-    const meta = texts.find((t) => t.field)?.field
-    const contribution: Contribution = {
-      name: meta?.name.trim() || prop.name,
-      intent: meta?.intent ?? 'custom',
-      type: 'string',
-      source: 'prop',
-      nodeIds: texts.map((t) => t.id),
-      sampleValue: prop.defaultValue,
-    }
-    if (meta?.description?.trim()) contribution.description = meta.description.trim()
-    if (meta?.maxLength) contribution.constraint = { ...meta.maxLength }
-    draft.contributions.push(contribution)
-  }
-
-  // Annotated texts inside the definition that are not prop-bound keep their own source.
-  for (const id of subtree(doc, frame.id)) {
-    const node = doc.nodes[id]
-    if (node?.type !== 'text' || node.content.type === 'prop' || !node.field) continue
-    const owner = contentOwner(doc, id)
-    if (owner?.kind !== 'component' || owner.id !== frame.id) continue
-    const contribution = contributionFromText(node, doc, ctx, 'string')
-    if (contribution.bindingPath) {
-      contribution.type = inferType(getByPath(doc.data, contribution.bindingPath, ctx)) ?? 'string'
-    }
-    draft.contributions.push(contribution)
+  for (const { node, field } of componentFields(doc, frame.id)) {
+    draft.contributions.push(contributionFromText(node, field, doc, {}))
   }
   return draft
 }
@@ -408,6 +359,7 @@ function mergeContributions(contributions: Contribution[]): SchemaField[] {
         constraint: c.constraint ?? null,
         source: c.source,
         bindingPath: c.bindingPath,
+        defaultNamed: c.defaultNamed,
         nodeIds: [...c.nodeIds],
         sampleValue: c.sampleValue,
       })
@@ -462,9 +414,10 @@ function applyPublishedIds(types: SchemaType[], published: PublishedSchema | nul
 }
 
 /**
- * Derive the content schema from the document: collection-bound repeaters and
- * component definitions become types, everything else annotated or connected
- * groups into per-frame singletons.
+ * Derive the content schema from the document. The contract is exactly the set
+ * of designations: repeaters with fields become collections, component
+ * definitions become component types, and every other field groups into its
+ * root frame's singleton. Nothing is inferred from layer names.
  */
 export function deriveSchema(doc: DesignDoc, published: PublishedSchema | null): DerivedSchema {
   const order = documentOrder(doc)
@@ -476,7 +429,10 @@ export function deriveSchema(doc: DesignDoc, published: PublishedSchema | null):
   for (const id of order) {
     const node = doc.nodes[id]
     if (node?.type !== 'frame') continue
-    if (node.repeat?.mode === 'collection') collections.push(collectionDraft(doc, node, node.repeat.path))
+    if (node.repeat) {
+      const draft = collectionDraft(doc, node)
+      if (draft) collections.push(draft)
+    }
     if (node.isComponent) components.push(componentDraft(doc, node))
   }
 
@@ -486,10 +442,9 @@ export function deriveSchema(doc: DesignDoc, published: PublishedSchema | null):
     const node = doc.nodes[id]
     if (node?.type !== 'text') continue
     totalTextCount += 1
-    const structured = !!node.field || node.content.type !== 'static'
-    if (structured) structuredTextCount += 1
-    if (!structured) continue
-    if (contentOwner(doc, id)) continue
+    if (!node.field) continue
+    structuredTextCount += 1
+    if (fieldOwner(doc, id)) continue
 
     const root = rootOf(doc, id)
     if (!root) continue
@@ -505,11 +460,7 @@ export function deriveSchema(doc: DesignDoc, published: PublishedSchema | null):
       singletonByRoot.set(root.id, draft)
       singletons.push(draft)
     }
-    const contribution = contributionFromText(node, doc, {}, 'string')
-    if (contribution.bindingPath) {
-      contribution.type = inferType(getByPath(doc.data, contribution.bindingPath)) ?? 'string'
-    }
-    draft.contributions.push(contribution)
+    draft.contributions.push(contributionFromText(node, node.field, doc, {}))
   }
 
   const usedKeys = new Set<string>()
@@ -524,12 +475,20 @@ export function deriveSchema(doc: DesignDoc, published: PublishedSchema | null):
       sourceId: draft.sourceId,
       fields,
     }
-    if (draft.kind === 'collection') type.itemCount = draft.itemCount ?? 0
+    if (draft.kind === 'collection') {
+      type.itemCount = draft.itemCount ?? 0
+      type.state = draft.state
+    }
     types.push(type)
   }
 
   applyPublishedIds(types, published)
-  return { types, structuredTextCount, totalTextCount }
+  const fieldCount = types.reduce((n, t) => n + t.fields.length, 0)
+  const defaultNamedCount = types.reduce(
+    (n, t) => n + t.fields.filter((f) => f.defaultNamed).length,
+    0,
+  )
+  return { types, fieldCount, defaultNamedCount, structuredTextCount, totalTextCount }
 }
 
 function sameConstraint(a: SchemaField['constraint'], b: SchemaField['constraint']): boolean {

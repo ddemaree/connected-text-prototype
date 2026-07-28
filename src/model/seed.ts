@@ -1,7 +1,6 @@
 import {
   DEFAULT_TEXT_STYLE,
   type AnyNode,
-  type ContentSource,
   type DesignDoc,
   type FrameNode,
   type InstanceNode,
@@ -57,7 +56,7 @@ function text(
   id: string,
   parentId: string | null,
   name: string,
-  content: ContentSource,
+  content: string,
   style: Partial<TextStyle> = {},
   layout: Partial<Pick<TextNode, 'x' | 'y' | 'width' | 'height' | 'widthMode' | 'heightMode'>> = {},
 ): TextNode {
@@ -73,7 +72,7 @@ function text(
     widthMode: layout.widthMode ?? 'fill',
     heightMode: layout.heightMode ?? 'hug',
     style: { ...DEFAULT_TEXT_STYLE, ...style },
-    content,
+    text: content,
   }
 }
 
@@ -113,7 +112,7 @@ export function buildSeedDoc(): DesignDoc {
     return n
   }
 
-  // ---- Hero frame: bindings to site data + a generator standfirst ----
+  // ---- Hero frame: one field per rung of the connection ladder ----
   add(
     frame('hero', null, 'Hero', {
       x: 80,
@@ -129,8 +128,8 @@ export function buildSeedDoc(): DesignDoc {
     }),
   )
   add({
-    // Static, but annotated — the "markup-only" schema story: no binding needed.
-    ...text('hero-kicker', 'hero', 'Kicker', { type: 'static', value: 'FROM THE EDITORS' }, {
+    // Placeholder: marking alone documents the contract, no connection needed.
+    ...text('hero-kicker', 'hero', 'Kicker', 'FROM THE EDITORS', {
       fontSize: 12,
       fontWeight: 700,
       letterSpacing: 1.2,
@@ -142,38 +141,48 @@ export function buildSeedDoc(): DesignDoc {
       intent: 'label',
       maxLength: { unit: 'characters', count: 24 },
       description: 'Short section label above the hero title.',
+      connection: { type: 'none' },
     },
   })
   add({
-    ...text('hero-title', 'hero', 'Site title', { type: 'binding', path: 'site.title' }, {
+    ...text('hero-title', 'hero', 'Site title', 'The Sunday Long Read', {
       fontFamily: 'serif',
       fontSize: 40,
       fontWeight: 700,
       lineHeight: 1.1,
       color: '#141414',
     }),
-    field: { name: 'title', intent: 'title' },
+    field: { name: 'title', intent: 'title', connection: { type: 'binding', path: 'site.title' } },
   })
   add({
-    ...text('hero-tagline', 'hero', 'Tagline', { type: 'binding', path: 'site.tagline' }, {
+    ...text('hero-tagline', 'hero', 'Tagline', 'Slow journalism for fast times', {
       fontSize: 17,
       fontWeight: 500,
       color: '#6b6b6b',
     }),
-    field: { name: 'tagline', intent: 'standfirst', maxLength: { unit: 'words', count: 12 } },
+    field: {
+      name: 'tagline',
+      intent: 'standfirst',
+      maxLength: { unit: 'words', count: 12 },
+      connection: { type: 'binding', path: 'site.tagline' },
+    },
   })
   add({
     ...text(
       'hero-standfirst',
       'hero',
       'Generated standfirst',
-      { type: 'generator', config: { kind: 'standfirst', unit: 'words', count: 18, seed: 42 } },
+      'A standfirst that sets up the story below.',
       { fontSize: 15, color: '#3d3d3d', lineHeight: 1.5 },
     ),
-    field: { name: 'standfirst', intent: 'standfirst' },
+    field: {
+      name: 'standfirst',
+      intent: 'standfirst',
+      connection: { type: 'generator', config: { kind: 'standfirst', unit: 'words', count: 18, seed: 42 } },
+    },
   })
 
-  // ---- Article card component ----
+  // ---- Article card component: its fields are its API, its text the defaults ----
   add(
     frame('card', null, 'Article card', {
       x: 80,
@@ -187,49 +196,53 @@ export function buildSeedDoc(): DesignDoc {
       autoLayout: { direction: 'column', gap: 8, paddingX: 24, paddingY: 24, align: 'start', justify: 'start', wrap: false },
       children: ['card-category', 'card-title', 'card-standfirst', 'card-byline'],
       isComponent: true,
-      props: [
-        { name: 'category', defaultValue: 'Category' },
-        { name: 'title', defaultValue: 'Article title goes here' },
-        { name: 'standfirst', defaultValue: 'A short standfirst that sets up the story in a sentence.' },
-        { name: 'author', defaultValue: 'Author Name' },
-      ],
     }),
   )
   add({
-    ...text('card-category', 'card', 'Category', { type: 'prop', prop: 'category' }, {
+    ...text('card-category', 'card', 'Category', 'Category', {
       fontSize: 11,
       fontWeight: 700,
       letterSpacing: 1,
       uppercase: true,
       color: '#b04618',
     }),
-    field: { name: 'category', intent: 'label' },
+    field: { name: 'category', intent: 'label', connection: { type: 'none' } },
   })
   add({
-    ...text('card-title', 'card', 'Title', { type: 'prop', prop: 'title' }, {
+    ...text('card-title', 'card', 'Title', 'Article title goes here', {
       fontFamily: 'serif',
       fontSize: 20,
       fontWeight: 700,
       lineHeight: 1.25,
       color: '#141414',
     }),
-    field: { name: 'title', intent: 'title', maxLength: { unit: 'words', count: 12 } },
+    field: {
+      name: 'title',
+      intent: 'title',
+      maxLength: { unit: 'words', count: 12 },
+      connection: { type: 'none' },
+    },
   })
   add({
-    ...text('card-standfirst', 'card', 'Standfirst', { type: 'prop', prop: 'standfirst' }, {
+    ...text('card-standfirst', 'card', 'Standfirst', 'A short standfirst that sets up the story in a sentence.', {
       fontSize: 13.5,
       color: '#5c5c5c',
       lineHeight: 1.5,
     }),
-    field: { name: 'standfirst', intent: 'standfirst', maxLength: { unit: 'words', count: 24 } },
+    field: {
+      name: 'standfirst',
+      intent: 'standfirst',
+      maxLength: { unit: 'words', count: 24 },
+      connection: { type: 'none' },
+    },
   })
   add({
-    ...text('card-byline', 'card', 'Byline', { type: 'prop', prop: 'author' }, {
+    ...text('card-byline', 'card', 'Byline', 'Author Name', {
       fontSize: 12,
       fontWeight: 600,
       color: '#8a8a8a',
     }),
-    field: { name: 'author', intent: 'name' },
+    field: { name: 'author', intent: 'name', connection: { type: 'none' } },
   })
 
   // ---- Repeater grid bound to the articles collection ----
@@ -283,7 +296,7 @@ export function buildSeedDoc(): DesignDoc {
       'grid-empty-title',
       'grid-empty',
       'Empty title',
-      { type: 'static', value: 'No articles yet' },
+      'No articles yet',
       { fontSize: 16, fontWeight: 700, color: '#4a4a4a', textAlign: 'center' },
       { widthMode: 'hug' },
     ),
@@ -293,7 +306,7 @@ export function buildSeedDoc(): DesignDoc {
       'grid-empty-sub',
       'grid-empty',
       'Empty subtitle',
-      { type: 'static', value: 'Published stories will appear here automatically.' },
+      'Published stories will appear here automatically.',
       { fontSize: 13, color: '#8a8a8a', textAlign: 'center' },
       { widthMode: 'hug' },
     ),
@@ -315,25 +328,44 @@ export function buildSeedDoc(): DesignDoc {
     }),
   )
   add({
-    ...text('pg-label', 'playground', 'Generated label', {
-      type: 'generator',
-      config: { kind: 'label', unit: 'words', count: 2, seed: 7 },
-    }, { fontSize: 11, fontWeight: 700, letterSpacing: 1.1, uppercase: true, color: '#2f6f4f' }),
-    field: { name: 'label', intent: 'label' },
+    ...text('pg-label', 'playground', 'Generated label', 'Section label', {
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: 1.1,
+      uppercase: true,
+      color: '#2f6f4f',
+    }),
+    field: {
+      name: 'label',
+      intent: 'label',
+      connection: { type: 'generator', config: { kind: 'label', unit: 'words', count: 2, seed: 7 } },
+    },
   })
   add({
-    ...text('pg-title', 'playground', 'Generated title', {
-      type: 'generator',
-      config: { kind: 'title', unit: 'words', count: 6, seed: 11 },
-    }, { fontFamily: 'serif', fontSize: 28, fontWeight: 700, lineHeight: 1.2, color: '#141414' }),
-    field: { name: 'title', intent: 'title' },
+    ...text('pg-title', 'playground', 'Generated title', 'A title of about six words', {
+      fontFamily: 'serif',
+      fontSize: 28,
+      fontWeight: 700,
+      lineHeight: 1.2,
+      color: '#141414',
+    }),
+    field: {
+      name: 'title',
+      intent: 'title',
+      connection: { type: 'generator', config: { kind: 'title', unit: 'words', count: 6, seed: 11 } },
+    },
   })
   add({
-    ...text('pg-para', 'playground', 'Generated paragraph', {
-      type: 'generator',
-      config: { kind: 'paragraph', unit: 'sentences', count: 3, seed: 23 },
-    }, { fontSize: 14, color: '#3d3d3d', lineHeight: 1.6 }),
-    field: { name: 'paragraph', intent: 'paragraph' },
+    ...text('pg-para', 'playground', 'Generated paragraph', 'Three sentences of body copy live here.', {
+      fontSize: 14,
+      color: '#3d3d3d',
+      lineHeight: 1.6,
+    }),
+    field: {
+      name: 'paragraph',
+      intent: 'paragraph',
+      connection: { type: 'generator', config: { kind: 'paragraph', unit: 'sentences', count: 3, seed: 23 } },
+    },
   })
 
   return {

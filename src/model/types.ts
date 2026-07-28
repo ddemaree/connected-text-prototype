@@ -26,30 +26,25 @@ export interface GeneratorConfig {
   seed: number
 }
 
-/**
- * Where a text frame (or a component prop value) gets its content.
- *  - static:    hand-typed text, editable by double-clicking on canvas
- *  - binding:   a path into the document's JSON data (CMS-style), e.g. "articles[0].title"
- *               or "item.title" inside a collection-bound repeater
- *  - generator: deterministic dummy text sized/shaped by config
- *  - prop:      inside a component definition, reads the named component prop
- */
-export type ContentSource =
-  | { type: 'static'; value: string }
-  | { type: 'binding'; path: string }
-  | { type: 'generator'; config: GeneratorConfig }
-  | { type: 'prop'; prop: string }
-
 /** What a piece of content IS, independent of where it comes from. */
 export type FieldIntent = GeneratorKind | 'custom'
 
 /**
- * Content field semantics attached to a text frame — orthogonal to its
- * ContentSource: a static text can carry field markup and still show up in
- * the derived schema.
+ * The one connection ladder a field climbs: placeholder → generator → bound.
+ * Each state subsumes the value of the one before it.
  */
-export interface FieldMeta {
-  /** Schema field name, e.g. "title". */
+export type FieldConnection =
+  | { type: 'none' }
+  | { type: 'generator'; config: GeneratorConfig }
+  | { type: 'binding'; path: string }
+
+/**
+ * The designation that turns plain text into structured content. A field is the
+ * unit of the published contract: only fields appear in the schema, and only
+ * fields can be connected to data or generators.
+ */
+export interface TextField {
+  /** Schema field name; may still be a default 'text_field_N'. */
   name: string
   /** What this content IS — reuses generator kinds as the intent vocabulary. */
   intent: FieldIntent
@@ -57,7 +52,11 @@ export interface FieldMeta {
   description?: string
   /** Editorial constraint; unit reuses GeneratorUnit. */
   maxLength?: { unit: GeneratorUnit; count: number } | null
+  connection: FieldConnection
 }
+
+/** Default field names are the "Frame 12" of this system: valid, but unmapped. */
+export const DEFAULT_FIELD_NAME_RE = /^text_field_\d+$/
 
 export interface TextStyle {
   fontFamily: 'sans' | 'serif' | 'mono'
@@ -69,11 +68,6 @@ export interface TextStyle {
   color: string
   textAlign: 'left' | 'center' | 'right'
   uppercase: boolean
-}
-
-export interface ComponentProp {
-  name: string
-  defaultValue: string
 }
 
 export type RepeatConfig =
@@ -104,9 +98,8 @@ export interface FrameNode extends BaseNode {
   shadow: boolean
   clip: boolean
   autoLayout: AutoLayout | null
-  /** When true this frame is a reusable component definition. */
+  /** When true this frame is a reusable component definition; its fields are its API. */
   isComponent?: boolean
-  props?: ComponentProp[]
   /**
    * Repeater: when set, the frame renders its first child N times
    * (fixed count, or once per item of a bound collection). A second
@@ -118,16 +111,22 @@ export interface FrameNode extends BaseNode {
 export interface TextNode extends BaseNode {
   type: 'text'
   style: TextStyle
-  content: ContentSource
-  /** Content field markup: what this text means in the published schema. */
-  field?: FieldMeta | null
+  /** Literal text: the content of plain text, the placeholder/default of a field. */
+  text: string
+  field?: TextField | null
 }
+
+/** A per-instance value for one of a component's fields. */
+export type OverrideValue =
+  | { type: 'static'; value: string }
+  | { type: 'generator'; config: GeneratorConfig }
+  | { type: 'binding'; path: string }
 
 export interface InstanceNode extends BaseNode {
   type: 'instance'
   componentId: NodeId
-  /** Per-instance prop values; a missing entry falls back to the prop default. */
-  overrides: Record<string, ContentSource>
+  /** Keyed by FIELD NAME of the definition's fields. Missing key = definition default. */
+  overrides: Record<string, OverrideValue>
 }
 
 export type AnyNode = FrameNode | TextNode | InstanceNode
@@ -145,8 +144,8 @@ export interface RenderContext {
   item?: unknown
   /** Clone index inside a repeater (0-based). */
   index?: number
-  /** Resolved prop values when rendering inside a component instance. */
-  propValues?: Record<string, string>
+  /** Resolved per-instance override values, keyed by field name. */
+  fieldValues?: Record<string, string>
   /** Extra offset mixed into generator seeds so clones/instances vary. */
   seedOffset?: number
 }

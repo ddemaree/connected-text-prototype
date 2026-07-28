@@ -1,6 +1,6 @@
-import { getByPath } from './resolve'
+import { componentFields, getByPath } from './resolve'
 import { describeConstraint, intentLabel, pathLeaf, type DerivedSchema, type SchemaField, type SchemaType } from './schema'
-import type { ContentSource, DesignDoc, NodeId } from './types'
+import type { DesignDoc, NodeId, OverrideValue } from './types'
 
 function pascalCase(s: string): string {
   return s
@@ -131,20 +131,18 @@ export function fetchSnippet(type: SchemaType): string {
     case 'singleton':
       return `const ${camelCase(type.key)} = await cms.singleton('${type.key}').get()  // ${name}`
     case 'component':
-      return `// ${pascalCase(type.name)} is consumed via props, not fetched — see Connected code.`
+      return `// ${pascalCase(type.name)} is consumed via fields, not fetched — see Connected code.`
   }
 }
 
-function jsxValue(source: ContentSource): string {
-  switch (source.type) {
+function jsxValue(value: OverrideValue): string {
+  switch (value.type) {
     case 'static':
-      return JSON.stringify(source.value)
+      return JSON.stringify(value.value)
     case 'binding':
-      return `{${source.path}}`
+      return `{${value.path}}`
     case 'generator':
-      return `{generator('${source.config.kind}', ${source.config.count})}`
-    case 'prop':
-      return `{props.${source.prop}}`
+      return `{generator('${value.config.kind}', ${value.config.count})}`
   }
 }
 
@@ -154,8 +152,9 @@ function jsxElement(name: string, attrs: string[]): string {
 }
 
 /**
- * The library code a connected component maps to (Code Connect analog):
- * an instance renders its resolved props, a definition its JSX signature.
+ * The library code a connected component maps to (Code Connect analog): an
+ * instance renders the fields it overrides — the rest fall through to the
+ * definition's own defaults — and a definition renders its JSX signature.
  */
 export function connectedComponentSnippet(doc: DesignDoc, nodeId: NodeId): string | null {
   const node = doc.nodes[nodeId]
@@ -163,14 +162,17 @@ export function connectedComponentSnippet(doc: DesignDoc, nodeId: NodeId): strin
   if (node.type === 'instance') {
     const def = doc.nodes[node.componentId]
     if (def?.type !== 'frame') return null
-    const attrs = (def.props ?? []).map((p) => {
-      const source = node.overrides[p.name] ?? { type: 'static' as const, value: p.defaultValue }
-      return `${p.name}=${jsxValue(source)}`
-    })
+    const attrs: string[] = []
+    for (const { field } of componentFields(doc, def.id)) {
+      const override = node.overrides[field.name]
+      if (override) attrs.push(`${field.name}=${jsxValue(override)}`)
+    }
     return jsxElement(pascalCase(def.name) || 'Component', attrs)
   }
   if (node.type === 'frame' && node.isComponent) {
-    const attrs = (node.props ?? []).map((p) => `${p.name}={${camelCase(p.name) || 'value'}}`)
+    const attrs = componentFields(doc, node.id).map(
+      ({ field }) => `${field.name}={${camelCase(field.name) || 'value'}}`,
+    )
     return jsxElement(pascalCase(node.name) || 'Component', attrs)
   }
   return null

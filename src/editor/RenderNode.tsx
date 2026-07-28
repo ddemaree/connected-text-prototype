@@ -1,0 +1,369 @@
+import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react'
+import { getByPath, resolveContent } from '../model/resolve'
+import type {
+  AnyNode,
+  AutoLayout,
+  FrameNode,
+  InstanceNode,
+  NodeId,
+  RenderContext,
+  TextNode,
+} from '../model/types'
+import { useStore } from '../store'
+import { hashId, useInteraction } from './interaction'
+
+const FONT_STACKS: Record<TextNode['style']['fontFamily'], string> = {
+  sans: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  serif: "'Iowan Old Style', Georgia, 'Times New Roman', serif",
+  mono: "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+}
+
+const ALIGN_MAP = { start: 'flex-start', center: 'center', end: 'flex-end' } as const
+const JUSTIFY_MAP = {
+  start: 'flex-start',
+  center: 'center',
+  end: 'flex-end',
+  between: 'space-between',
+} as const
+
+/** CSS for a node's own box, given how its parent lays it out. */
+function sizingStyle(node: AnyNode, parentLayout: AutoLayout | null, isRootLevel: boolean): CSSProperties {
+  const style: CSSProperties = {}
+  const isText = node.type === 'text'
+  const hugWidth = isText ? 'max-content' : 'fit-content'
+
+  if (parentLayout && !isRootLevel) {
+    const row = parentLayout.direction === 'row'
+    // width
+    if (node.widthMode === 'fixed') {
+      style.width = node.width
+      if (row) style.flexShrink = 0
+    } else if (node.widthMode === 'hug') {
+      style.width = hugWidth
+      if (row) style.flexShrink = 0
+    } else {
+      // fill
+      if (row) {
+        style.flexGrow = 1
+        style.flexBasis = 0
+        style.minWidth = 0
+      } else {
+        style.alignSelf = 'stretch'
+        style.minWidth = 0
+      }
+    }
+    // height
+    if (node.heightMode === 'fixed') {
+      style.height = node.height
+      if (!row) style.flexShrink = 0
+    } else if (node.heightMode === 'hug') {
+      style.height = 'fit-content'
+    } else {
+      if (!row) {
+        style.flexGrow = 1
+        style.flexBasis = 0
+        style.minHeight = 0
+      } else {
+        style.alignSelf = 'stretch'
+        style.minHeight = 0
+      }
+    }
+  } else {
+    style.position = 'absolute'
+    style.left = node.x
+    style.top = node.y
+    style.width = node.widthMode === 'hug' ? hugWidth : node.width
+    style.height = node.heightMode === 'hug' ? 'fit-content' : node.height
+  }
+  return style
+}
+
+function frameBoxStyle(node: FrameNode): CSSProperties {
+  const style: CSSProperties = {
+    borderRadius: node.cornerRadius,
+    background: node.fill ?? 'transparent',
+    overflow: node.clip ? 'hidden' : 'visible',
+    boxSizing: 'border-box',
+  }
+  const shadows: string[] = []
+  if (node.stroke) shadows.push(`inset 0 0 0 ${node.strokeWidth}px ${node.stroke}`)
+  if (node.shadow) shadows.push('0 2px 6px rgba(20,18,12,0.08), 0 12px 32px rgba(20,18,12,0.10)')
+  if (shadows.length) style.boxShadow = shadows.join(', ')
+  if (node.autoLayout) {
+    const al = node.autoLayout
+    style.display = 'flex'
+    style.flexDirection = al.direction
+    style.gap = al.gap
+    style.padding = `${al.paddingY}px ${al.paddingX}px`
+    style.alignItems = ALIGN_MAP[al.align]
+    style.justifyContent = JUSTIFY_MAP[al.justify]
+    style.flexWrap = al.wrap ? 'wrap' : 'nowrap'
+    if (al.wrap) style.alignContent = 'flex-start'
+  } else {
+    style.position = 'relative' as const
+  }
+  if (node.children.length === 0) {
+    style.minWidth = 8
+    style.minHeight = 8
+  }
+  return style
+}
+
+export interface NodeViewProps {
+  id: NodeId
+  ctx: RenderContext
+  /** Ghosts are visual clones (repeater copies, instance internals): not selectable. */
+  ghost?: boolean
+  isRootLevel?: boolean
+}
+
+export const NodeView = memo(function NodeView({ id, ctx, ghost, isRootLevel }: NodeViewProps) {
+  const node = useStore((s) => s.doc.nodes[id])
+  const parent = useStore((s) => (node?.parentId ? s.doc.nodes[node.parentId] : undefined))
+  if (!node) return null
+  const parentLayout = !isRootLevel && parent?.type === 'frame' ? parent.autoLayout : null
+
+  switch (node.type) {
+    case 'frame':
+      return <FrameView node={node} parentLayout={parentLayout} ctx={ctx} ghost={ghost} isRootLevel={isRootLevel} />
+    case 'text':
+      return <TextView node={node} parentLayout={parentLayout} ctx={ctx} ghost={ghost} isRootLevel={isRootLevel} />
+    case 'instance':
+      return <InstanceView node={node} parentLayout={parentLayout} ctx={ctx} ghost={ghost} isRootLevel={isRootLevel} />
+  }
+})
+
+interface ViewProps<T extends AnyNode> {
+  node: T
+  parentLayout: AutoLayout | null
+  ctx: RenderContext
+  ghost?: boolean
+  isRootLevel?: boolean
+}
+
+function useNodeEvents(id: NodeId, ghost: boolean | undefined) {
+  const interaction = useInteraction()
+  const setHovered = useStore((s) => s.setHovered)
+  if (ghost) return {}
+  return {
+    onPointerDown: (e: React.PointerEvent) => interaction.onNodePointerDown(e, id),
+    onPointerOver: (e: React.PointerEvent) => {
+      e.stopPropagation()
+      setHovered(id)
+    },
+    onPointerOut: () => {
+      const cur = useStore.getState().hoveredId
+      if (cur === id) setHovered(null)
+    },
+  }
+}
+
+function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<FrameNode>) {
+  const events = useNodeEvents(node.id, ghost)
+  const doc = useStore((s) => s.doc)
+  const style: CSSProperties = {
+    ...sizingStyle(node, parentLayout, !!isRootLevel),
+    ...frameBoxStyle(node),
+  }
+  if (ghost) style.pointerEvents = 'none'
+
+  // A component definition rendered on canvas (not through an instance)
+  // previews its prop-bound text using the props' default values.
+  let ctxForChildren = ctx
+  if (node.isComponent) {
+    ctxForChildren = {
+      ...ctx,
+      propValues: Object.fromEntries((node.props ?? []).map((p) => [p.name, p.defaultValue])),
+    }
+  }
+
+  let childContent: React.ReactNode
+  if (node.repeat && node.children.length > 0) {
+    const templateId = node.children[0]
+    const emptyId = node.children[1]
+    let items: unknown[]
+    if (node.repeat.mode === 'count') {
+      items = Array.from({ length: Math.max(0, Math.min(100, node.repeat.count)) }, () => undefined)
+    } else {
+      const v = getByPath(doc.data, node.repeat.path, ctx)
+      items = Array.isArray(v) ? v : []
+    }
+    if (items.length === 0) {
+      childContent = emptyId ? <NodeView key={emptyId} id={emptyId} ctx={ctx} ghost={ghost} /> : null
+    } else {
+      childContent = items.map((item, i) => (
+        <NodeView
+          key={i === 0 ? templateId : `${templateId}::${i}`}
+          id={templateId}
+          ctx={{
+            ...ctx,
+            item: node.repeat!.mode === 'collection' ? item : ctx.item,
+            index: i,
+            seedOffset: (ctx.seedOffset ?? 0) + i * 101,
+          }}
+          ghost={ghost || i > 0}
+        />
+      ))
+    }
+  } else {
+    childContent = node.children.map((c) => <NodeView key={c} id={c} ctx={ctxForChildren} ghost={ghost} />)
+  }
+
+  return (
+    <div data-node-id={ghost ? undefined : node.id} style={style} {...events}>
+      {childContent}
+    </div>
+  )
+}
+
+function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<TextNode>) {
+  const events = useNodeEvents(node.id, ghost)
+  const doc = useStore((s) => s.doc)
+  const editing = useStore((s) => s.editingId === node.id && !ghost)
+  const setEditing = useStore((s) => s.setEditing)
+  const select = useStore((s) => s.select)
+  const commitTextEdit = useStore((s) => s.commitTextEdit)
+  const pushHistory = useStore((s) => s.pushHistory)
+  const setToast = useStore((s) => s.setToast)
+  const editRef = useRef<HTMLDivElement | null>(null)
+
+  const resolved = resolveContent(node.content, doc, ctx)
+
+  const s = node.style
+  const style: CSSProperties = {
+    ...sizingStyle(node, parentLayout, !!isRootLevel),
+    fontFamily: FONT_STACKS[s.fontFamily],
+    fontSize: s.fontSize,
+    fontWeight: s.fontWeight,
+    lineHeight: s.lineHeight,
+    letterSpacing: s.letterSpacing,
+    color: s.color,
+    textAlign: s.textAlign,
+    textTransform: s.uppercase ? 'uppercase' : 'none',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    cursor: editing ? 'text' : undefined,
+  }
+  if (node.heightMode === 'fixed') style.overflow = 'hidden'
+  if (ghost) style.pointerEvents = 'none'
+  if (resolved.missing) style.opacity = 0.45
+
+  useLayoutEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.innerText = resolved.text
+      editRef.current.focus()
+      const range = document.createRange()
+      range.selectNodeContents(editRef.current)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
+
+  if (editing) {
+    return (
+      <div
+        data-node-id={node.id}
+        ref={editRef}
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck={false}
+        style={{ ...style, outline: 'none', userSelect: 'text' }}
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            commitTextEdit(node.id, editRef.current?.innerText ?? '')
+          }
+        }}
+        onBlur={() => commitTextEdit(node.id, editRef.current?.innerText ?? '')}
+      />
+    )
+  }
+
+  return (
+    <div
+      data-node-id={ghost ? undefined : node.id}
+      style={style}
+      {...events}
+      onDoubleClick={
+        ghost
+          ? undefined
+          : (e) => {
+              e.stopPropagation()
+              select([node.id])
+              if (node.content.type === 'static') {
+                pushHistory()
+                setEditing(node.id)
+              } else {
+                const label =
+                  node.content.type === 'binding'
+                    ? `data path “${node.content.path}”`
+                    : node.content.type === 'generator'
+                      ? 'a text generator'
+                      : `component prop “${node.content.prop}”`
+                setToast(`This text is connected to ${label} — edit its source in the Content panel, or Detach it to make it editable.`)
+              }
+            }
+      }
+    >
+      {resolved.missing ? `⚠ ${resolved.text}` : resolved.text || ' '}
+    </div>
+  )
+}
+
+function InstanceView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<InstanceNode>) {
+  const events = useNodeEvents(node.id, ghost)
+  const doc = useStore((s) => s.doc)
+  const def = doc.nodes[node.componentId]
+
+  if (!def || def.type !== 'frame') {
+    return (
+      <div
+        data-node-id={ghost ? undefined : node.id}
+        style={{
+          ...sizingStyle(node, parentLayout, !!isRootLevel),
+          minHeight: 40,
+          border: '1px dashed #c33',
+          color: '#c33',
+          fontSize: 12,
+          padding: 8,
+        }}
+        {...events}
+      >
+        Missing component
+      </div>
+    )
+  }
+
+  // Resolve prop values in the *instance's* context (so overrides can use
+  // `item.x` bindings inside repeaters, generators vary per clone, etc.)
+  const propValues: Record<string, string> = {}
+  for (const prop of def.props ?? []) {
+    const source = node.overrides[prop.name] ?? { type: 'static' as const, value: prop.defaultValue }
+    propValues[prop.name] = resolveContent(source, doc, ctx).text
+  }
+
+  const innerCtx: RenderContext = {
+    ...ctx,
+    propValues,
+    seedOffset: (ctx.seedOffset ?? 0) + hashId(node.id),
+  }
+
+  // The wrapper takes the instance's sizing but the definition's visual style.
+  const style: CSSProperties = {
+    ...sizingStyle(node, parentLayout, !!isRootLevel),
+    ...frameBoxStyle(def),
+  }
+  if (ghost) style.pointerEvents = 'none'
+
+  return (
+    <div data-node-id={ghost ? undefined : node.id} style={style} {...events}>
+      {def.children.map((c) => (
+        <NodeView key={c} id={c} ctx={innerCtx} ghost />
+      ))}
+    </div>
+  )
+}

@@ -304,7 +304,7 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
                     : node.content.type === 'generator'
                       ? 'a text generator'
                       : `component prop “${node.content.prop}”`
-                setToast(`This text is connected to ${label} — edit it in the Content panel, or switch it to Static.`)
+                setToast(`This text is connected to ${label} — edit its source in the Content panel, or Detach it to make it editable.`)
               }
             }
       }

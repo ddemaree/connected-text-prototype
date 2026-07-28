@@ -50,8 +50,9 @@ The canvas seeds with four top-level frames that exercise everything:
 ### Editing text
 **Double-click a text frame to edit it in place.** If the text is *connected*
 (bound, generated, or prop-driven) a toast points you at the Content panel
-instead of silently overwriting the connection — switch it back to **Static**
-there if you want free editing.
+instead of silently overwriting the connection — a **Detach** button there
+converts connected text back to editable static text, keeping what's
+currently shown.
 
 ### Connected text
 Every text frame has a **Content source**, shown as a chip on the canvas and a

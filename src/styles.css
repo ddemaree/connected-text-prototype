@@ -712,6 +712,20 @@ button {
   background: var(--component-soft);
 }
 
+.btn-detach {
+  width: 100%;
+  justify-content: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-dim);
+}
+
+.btn-detach:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
 .mini-btn {
   display: inline-flex;
   align-items: center;

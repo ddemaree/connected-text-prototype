@@ -1,4 +1,4 @@
-import { Dices } from 'lucide-react'
+import { Dices, Unlink } from 'lucide-react'
 import { GENERATOR_KINDS, GENERATOR_UNITS, defaultGeneratorFor } from '../model/generators'
 import { bindablePaths, getByPath, resolveContent } from '../model/resolve'
 import type { ContentSource, GeneratorConfig, RenderContext } from '../model/types'
@@ -55,12 +55,18 @@ export function ContentSourceEditor({
     }
   }
 
-  const kinds: { value: SourceKind; label: string; title: string }[] = [
+  const allKinds: { value: SourceKind; label: string; title: string }[] = [
     { value: 'static', label: 'Static', title: 'Hand-typed text (double-click on canvas to edit)' },
     { value: 'binding', label: 'Data', title: 'Bind to a path in the JSON data source' },
     { value: 'generator', label: 'Generate', title: 'Dummy text with a chosen shape and length' },
   ]
-  if (propNames) kinds.push({ value: 'prop', label: 'Prop', title: 'Bind to a component prop' })
+  if (propNames) allKinds.push({ value: 'prop', label: 'Prop', title: 'Bind to a component prop' })
+  // Once connected, "Static" is no longer a segmented option — breaking the
+  // connection is an explicit Detach action instead.
+  const kinds = source.type === 'static' ? allKinds : allKinds.filter((k) => k.value !== 'static')
+
+  const detachLabel =
+    source.type === 'binding' ? 'Detach from data' : source.type === 'generator' ? 'Detach from generator' : 'Detach from prop'
 
   return (
     <div className="content-source-editor">
@@ -112,6 +118,16 @@ export function ContentSourceEditor({
             <div className="source-preview">This component has no props yet — add one below or expose this text.</div>
           )}
         </>
+      )}
+
+      {source.type !== 'static' && (
+        <button
+          className="btn btn-detach"
+          title="Convert to static text, keeping the text currently shown"
+          onClick={() => onChange({ type: 'static', value: resolved.missing ? '' : resolved.text })}
+        >
+          <Unlink size={12} /> {detachLabel}
+        </button>
       )}
     </div>
   )

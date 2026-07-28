@@ -3,6 +3,7 @@ import { immer } from 'zustand/middleware/immer'
 import { importHtml } from './model/htmlImport'
 import { buildSeedDoc } from './model/seed'
 import { resolveContent } from './model/resolve'
+import { deriveSchema, publishSchema, type PublishedSchema } from './model/schema'
 import {
   DEFAULT_AUTO_LAYOUT,
   DEFAULT_TEXT_STYLE,
@@ -12,6 +13,7 @@ import {
   type ComponentProp,
   type ContentSource,
   type DesignDoc,
+  type FieldMeta,
   type FrameNode,
   type InstanceNode,
   type NodeId,
@@ -23,6 +25,8 @@ import {
 
 export type Tool = 'select' | 'frame' | 'text'
 export type LeftTab = 'layers' | 'data' | 'assets'
+/** Design mode edits the document; dev mode inspects it. */
+export type Mode = 'design' | 'dev'
 
 export interface Viewport {
   x: number
@@ -30,7 +34,8 @@ export interface Viewport {
   zoom: number
 }
 
-const STORAGE_KEY = 'frameshift-doc-v1'
+const STORAGE_KEY = 'frameshift-doc-v2'
+const SCHEMA_KEY = 'frameshift-schema-v1'
 const HISTORY_LIMIT = 60
 
 interface EditorState {
@@ -39,14 +44,18 @@ interface EditorState {
   hoveredId: NodeId | null
   editingId: NodeId | null
   tool: Tool
+  mode: Mode
   leftTab: LeftTab
   viewport: Viewport
   past: DesignDoc[]
   future: DesignDoc[]
   toast: string | null
+  /** Last published schema — versioned separately from the document. */
+  publishedSchema: PublishedSchema | null
 
   // -- ui --
   setTool: (t: Tool) => void
+  setMode: (m: Mode) => void
   setToast: (msg: string | null) => void
   setLeftTab: (t: LeftTab) => void
   setViewport: (v: Viewport) => void
@@ -78,7 +87,11 @@ interface EditorState {
 
   // -- content --
   setContent: (textId: NodeId, source: ContentSource) => void
+  setTextField: (id: NodeId, field: FieldMeta | null) => void
   commitTextEdit: (id: NodeId, value: string) => void
+
+  // -- schema --
+  publishCurrentSchema: () => void
 
   // -- components --
   makeComponent: (frameId: NodeId) => void
@@ -111,6 +124,19 @@ function loadInitialDoc(): DesignDoc {
     // fall through to seed
   }
   return buildSeedDoc()
+}
+
+function loadPublishedSchema(): PublishedSchema | null {
+  try {
+    const raw = localStorage.getItem(SCHEMA_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as PublishedSchema
+      if (parsed && Array.isArray(parsed.types)) return parsed
+    }
+  } catch {
+    // fall through to unpublished
+  }
+  return null
 }
 
 /** Deep-clone via JSON: docs are JSON-serializable, and this reads through immer drafts. */
@@ -184,13 +210,24 @@ export const useStore = create<EditorState>()(
       hoveredId: null,
       editingId: null,
       tool: 'select',
+      mode: 'design',
       leftTab: 'layers',
       viewport: { x: 40, y: 20, zoom: 0.75 },
       past: [],
       future: [],
       toast: null,
+      publishedSchema: loadPublishedSchema(),
 
       setTool: (t) => set({ tool: t }),
+      setMode: (m) =>
+        set((s) => {
+          s.mode = m
+          // Dev mode is inspect-only: drop any in-progress edit or drawing tool.
+          if (m === 'dev') {
+            s.editingId = null
+            s.tool = 'select'
+          }
+        }),
       setToast: (msg) => {
         set({ toast: msg })
         if (msg) {
@@ -450,6 +487,25 @@ export const useStore = create<EditorState>()(
           if (node?.type === 'text') node.content = source
         }),
 
+      setTextField: (id, field) =>
+        withHistory((s) => {
+          const node = s.doc.nodes[id]
+          if (node?.type !== 'text') return
+          if (field) node.field = { ...field, name: field.name.trim() }
+          else delete node.field
+        }),
+
+      publishCurrentSchema: () => {
+        const { doc, publishedSchema } = get()
+        const next = publishSchema(publishedSchema, deriveSchema(doc, publishedSchema))
+        set({ publishedSchema: next })
+        try {
+          localStorage.setItem(SCHEMA_KEY, JSON.stringify(next))
+        } catch {
+          // storage full / unavailable — persistence is best-effort
+        }
+      },
+
       commitTextEdit: (id, value) =>
         withHistory((s) => {
           const node = s.doc.nodes[id]
@@ -618,7 +674,13 @@ export const useStore = create<EditorState>()(
           doc: buildSeedDoc(),
           selection: [],
           editingId: null,
+          publishedSchema: null,
         })
+        try {
+          localStorage.removeItem(SCHEMA_KEY)
+        } catch {
+          // storage unavailable — nothing to clear
+        }
       },
 
       importHtmlMarkup: (html) => {

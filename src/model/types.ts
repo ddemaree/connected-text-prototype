@@ -40,6 +40,25 @@ export type ContentSource =
   | { type: 'generator'; config: GeneratorConfig }
   | { type: 'prop'; prop: string }
 
+/** What a piece of content IS, independent of where it comes from. */
+export type FieldIntent = GeneratorKind | 'custom'
+
+/**
+ * Content field semantics attached to a text frame — orthogonal to its
+ * ContentSource: a static text can carry field markup and still show up in
+ * the derived schema.
+ */
+export interface FieldMeta {
+  /** Schema field name, e.g. "title". */
+  name: string
+  /** What this content IS — reuses generator kinds as the intent vocabulary. */
+  intent: FieldIntent
+  /** Author note for developers/editors. */
+  description?: string
+  /** Editorial constraint; unit reuses GeneratorUnit. */
+  maxLength?: { unit: GeneratorUnit; count: number } | null
+}
+
 export interface TextStyle {
   fontFamily: 'sans' | 'serif' | 'mono'
   fontSize: number
@@ -100,6 +119,8 @@ export interface TextNode extends BaseNode {
   type: 'text'
   style: TextStyle
   content: ContentSource
+  /** Content field markup: what this text means in the published schema. */
+  field?: FieldMeta | null
 }
 
 export interface InstanceNode extends BaseNode {

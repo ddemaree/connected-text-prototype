@@ -89,8 +89,31 @@ function useKeyboardShortcuts() {
   }, [])
 }
 
+/** Pasting markup anywhere outside a field imports it onto the canvas. */
+function usePasteImport() {
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable]')) return
+      const state = useStore.getState()
+      if (state.editingId) return
+      let html = e.clipboardData?.getData('text/html') ?? ''
+      if (!html.trim()) {
+        const plain = e.clipboardData?.getData('text/plain') ?? ''
+        if (plain.trimStart().startsWith('<')) html = plain
+      }
+      if (!html.trim()) return
+      e.preventDefault()
+      state.importHtmlMarkup(html)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
+}
+
 export default function App() {
   useKeyboardShortcuts()
+  usePasteImport()
   const leftTab = useStore((s) => s.leftTab)
   const setLeftTab = useStore((s) => s.setLeftTab)
 

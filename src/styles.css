@@ -995,6 +995,59 @@ button {
   pointer-events: none;
 }
 
+/* ---------- modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 60;
+}
+
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modal-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.modal-textarea {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-actions-spacer {
+  flex: 1;
+}
+
 /* scrollbars */
 
 ::-webkit-scrollbar {

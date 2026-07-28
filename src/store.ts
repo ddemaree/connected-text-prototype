@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { importHtml } from './model/htmlImport'
 import { buildSeedDoc } from './model/seed'
 import { resolveContent } from './model/resolve'
 import {
@@ -94,6 +95,9 @@ interface EditorState {
   // -- data --
   setData: (data: unknown) => void
   resetDoc: () => void
+
+  // -- import --
+  importHtmlMarkup: (html: string) => { ok: boolean; message: string }
 }
 
 function loadInitialDoc(): DesignDoc {
@@ -615,6 +619,49 @@ export const useStore = create<EditorState>()(
           selection: [],
           editingId: null,
         })
+      },
+
+      importHtmlMarkup: (html) => {
+        const state = get()
+        const data = state.doc.data
+        const existingKeys =
+          data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data) : []
+        const result = importHtml(html, existingKeys)
+        if (!result) {
+          const message = 'No convertible HTML found.'
+          state.setToast(message)
+          return { ok: false, message }
+        }
+
+        // Drop the import to the right of everything already on the canvas.
+        const roots = state.doc.rootIds.map((id) => state.doc.nodes[id]).filter(Boolean)
+        const x = roots.length ? Math.max(...roots.map((n) => n.x + n.width)) + 80 : 100
+        const y = roots.length ? Math.min(...roots.map((n) => n.y)) : 100
+
+        withHistory((s) => {
+          for (const node of result.nodes) s.doc.nodes[node.id] = node
+          const root = s.doc.nodes[result.rootId]
+          root.x = x
+          root.y = y
+          s.doc.rootIds.push(result.rootId)
+          if (!s.doc.data || typeof s.doc.data !== 'object' || Array.isArray(s.doc.data)) s.doc.data = {}
+          const target = s.doc.data as Record<string, unknown>
+          for (const [key, value] of Object.entries(result.collections)) target[key] = value
+          s.selection = [result.rootId]
+        })
+
+        const { layerCount, collectionNames } = result.stats
+        let message = `Imported ${layerCount} layer${layerCount === 1 ? '' : 's'}`
+        if (collectionNames.length) {
+          const parts = collectionNames.map(
+            (name) => `“${name}” (${result.collections[name]?.length ?? 0} items)`,
+          )
+          message += ` · extracted ${parts.join(', ')} into Data, wired to ${
+            collectionNames.length > 1 ? 'repeaters' : 'a repeater'
+          }`
+        }
+        state.setToast(message)
+        return { ok: true, message }
       },
     }
   }),

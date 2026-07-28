@@ -1,4 +1,6 @@
-import { Frame, MousePointer2, Redo2, RotateCcw, Type, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { CodeXml, Frame, MousePointer2, Redo2, RotateCcw, Type, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { EXAMPLE_HTML } from '../model/htmlImport'
 import { useStore, type Tool } from '../store'
 
 const TOOLS: { value: Tool; icon: React.ReactNode; title: string }[] = [
@@ -17,6 +19,18 @@ export function Toolbar() {
   const canUndo = useStore((s) => s.past.length > 0)
   const canRedo = useStore((s) => s.future.length > 0)
   const resetDoc = useStore((s) => s.resetDoc)
+  const importHtmlMarkup = useStore((s) => s.importHtmlMarkup)
+  const [importOpen, setImportOpen] = useState(false)
+  const [markup, setMarkup] = useState('')
+
+  useEffect(() => {
+    if (!importOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImportOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [importOpen])
 
   const zoomTo = (zoom: number) => {
     const el = document.querySelector('.canvas-container')
@@ -77,6 +91,16 @@ export function Toolbar() {
       <div className="toolbar-group">
         <button
           className="tool-btn"
+          title="Import HTML — or paste markup on the canvas"
+          onClick={() => setImportOpen(true)}
+        >
+          <CodeXml size={15} />
+        </button>
+      </div>
+
+      <div className="toolbar-group">
+        <button
+          className="tool-btn"
           title="Reset the demo document"
           onClick={() => {
             if (window.confirm('Reset the canvas and data to the demo document?')) resetDoc()
@@ -85,6 +109,51 @@ export function Toolbar() {
           <RotateCcw size={15} />
         </button>
       </div>
+
+      {importOpen && (
+        <div
+          className="modal-overlay"
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) setImportOpen(false)
+          }}
+        >
+          <div className="modal-panel" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="modal-title">Import HTML</div>
+            <div className="modal-hint">
+              Blocks become frames, headings and paragraphs become text. Repeated structures (like a card
+              list) become a repeater with the content extracted to Data.
+            </div>
+            <textarea
+              className="field modal-textarea"
+              rows={12}
+              spellCheck={false}
+              autoFocus
+              value={markup}
+              placeholder="Paste HTML markup here…"
+              onChange={(e) => setMarkup(e.target.value)}
+            />
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setMarkup(EXAMPLE_HTML)}>
+                Try an example
+              </button>
+              <div className="modal-actions-spacer" />
+              <button className="btn" onClick={() => setImportOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={!markup.trim()}
+                onClick={() => {
+                  importHtmlMarkup(markup)
+                  setImportOpen(false)
+                }}
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { importFigmaClipboard } from './model/figmaImport'
 import { importHtml } from './model/htmlImport'
+import type { ImportResult } from './model/importIr'
 import { buildSeedDoc } from './model/seed'
 import { resolveContent } from './model/resolve'
 import {
@@ -98,6 +100,7 @@ interface EditorState {
 
   // -- import --
   importHtmlMarkup: (html: string) => { ok: boolean; message: string }
+  importFigmaClipboardData: (html: string) => Promise<{ ok: boolean; message: string }>
 }
 
 function loadInitialDoc(): DesignDoc {
@@ -623,49 +626,73 @@ export const useStore = create<EditorState>()(
 
       importHtmlMarkup: (html) => {
         const state = get()
-        const data = state.doc.data
-        const existingKeys =
-          data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data) : []
-        const result = importHtml(html, existingKeys)
+        const result = importHtml(html, existingDataKeys(state.doc.data))
         if (!result) {
           const message = 'No convertible HTML found.'
           state.setToast(message)
           return { ok: false, message }
         }
-
-        // Drop the import to the right of everything already on the canvas.
-        const roots = state.doc.rootIds.map((id) => state.doc.nodes[id]).filter(Boolean)
-        const x = roots.length ? Math.max(...roots.map((n) => n.x + n.width)) + 80 : 100
-        const y = roots.length ? Math.min(...roots.map((n) => n.y)) : 100
-
-        withHistory((s) => {
-          for (const node of result.nodes) s.doc.nodes[node.id] = node
-          const root = s.doc.nodes[result.rootId]
-          root.x = x
-          root.y = y
-          s.doc.rootIds.push(result.rootId)
-          if (!s.doc.data || typeof s.doc.data !== 'object' || Array.isArray(s.doc.data)) s.doc.data = {}
-          const target = s.doc.data as Record<string, unknown>
-          for (const [key, value] of Object.entries(result.collections)) target[key] = value
-          s.selection = [result.rootId]
-        })
-
-        const { layerCount, collectionNames } = result.stats
-        let message = `Imported ${layerCount} layer${layerCount === 1 ? '' : 's'}`
-        if (collectionNames.length) {
-          const parts = collectionNames.map(
-            (name) => `“${name}” (${result.collections[name]?.length ?? 0} items)`,
-          )
-          message += ` · extracted ${parts.join(', ')} into Data, wired to ${
-            collectionNames.length > 1 ? 'repeaters' : 'a repeater'
-          }`
-        }
-        state.setToast(message)
-        return { ok: true, message }
+        return insertImport(result, 'from HTML')
       },
+
+      importFigmaClipboardData: async (html) => {
+        const state = get()
+        let result: ImportResult | null
+        try {
+          result = await importFigmaClipboard(html, existingDataKeys(state.doc.data))
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'unexpected error'
+          const message = `Couldn't decode the Figma clipboard data (${reason}).`
+          state.setToast(message)
+          return { ok: false, message }
+        }
+        if (!result) {
+          const message = 'No importable layers found in the Figma clipboard data.'
+          state.setToast(message)
+          return { ok: false, message }
+        }
+        return insertImport(result, 'from Figma')
+      },
+    }
+
+    function insertImport(result: ImportResult, source: string): { ok: boolean; message: string } {
+      // Drop the import to the right of everything already on the canvas.
+      const state = get()
+      const roots = state.doc.rootIds.map((id) => state.doc.nodes[id]).filter(Boolean)
+      const x = roots.length ? Math.max(...roots.map((n) => n.x + n.width)) + 80 : 100
+      const y = roots.length ? Math.min(...roots.map((n) => n.y)) : 100
+
+      withHistory((s) => {
+        for (const node of result.nodes) s.doc.nodes[node.id] = node
+        const root = s.doc.nodes[result.rootId]
+        root.x = x
+        root.y = y
+        s.doc.rootIds.push(result.rootId)
+        if (!s.doc.data || typeof s.doc.data !== 'object' || Array.isArray(s.doc.data)) s.doc.data = {}
+        const target = s.doc.data as Record<string, unknown>
+        for (const [key, value] of Object.entries(result.collections)) target[key] = value
+        s.selection = [result.rootId]
+      })
+
+      const { layerCount, collectionNames } = result.stats
+      let message = `Imported ${layerCount} layer${layerCount === 1 ? '' : 's'} ${source}`
+      if (collectionNames.length) {
+        const parts = collectionNames.map(
+          (name) => `“${name}” (${result.collections[name]?.length ?? 0} items)`,
+        )
+        message += ` · extracted ${parts.join(', ')} into Data, wired to ${
+          collectionNames.length > 1 ? 'repeaters' : 'a repeater'
+        }`
+      }
+      get().setToast(message)
+      return { ok: true, message }
     }
   }),
 )
+
+function existingDataKeys(data: unknown): string[] {
+  return data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data) : []
+}
 
 // ---- persistence ----
 let saveTimer: ReturnType<typeof setTimeout> | null = null

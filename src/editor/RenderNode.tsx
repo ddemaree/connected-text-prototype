@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, type CSSProperties } from 'react'
-import { getByPath, resolveContent } from '../model/resolve'
+import { getByPath, instanceFieldValues, resolveText } from '../model/resolve'
 import type {
   AnyNode,
   AutoLayout,
@@ -16,6 +16,26 @@ const FONT_STACKS: Record<TextNode['style']['fontFamily'], string> = {
   sans: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   serif: "'Iowan Old Style', Georgia, 'Times New Roman', serif",
   mono: "ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace",
+}
+
+export interface ContentChip {
+  label: string
+  cls: string
+}
+
+/**
+ * The chip shown for a text layer: only fields get one, labeled with the
+ * field's name. The chip is a field badge, not a source badge — same green
+ * either way, hollow while unconnected and filled with a ⚡ once a connection
+ * is attached, whichever source it reads from. Plain text gets no chip.
+ */
+export function contentChip(node: AnyNode | undefined): ContentChip | null {
+  if (!node || node.type !== 'text' || !node.field) return null
+  const connected = node.field.connection.type !== 'none'
+  return {
+    label: `${connected ? '⚡' : '⌁'} ${node.field.name}`,
+    cls: connected ? 'chip-field is-connected' : 'chip-field',
+  }
 }
 
 const ALIGN_MAP = { start: 'flex-start', center: 'center', end: 'flex-end' } as const
@@ -167,16 +187,9 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
   }
   if (ghost) style.pointerEvents = 'none'
 
-  // A component definition rendered on canvas (not through an instance)
-  // previews its prop-bound text using the props' default values.
-  let ctxForChildren = ctx
-  if (node.isComponent) {
-    ctxForChildren = {
-      ...ctx,
-      propValues: Object.fromEntries((node.props ?? []).map((p) => [p.name, p.defaultValue])),
-    }
-  }
-
+  // A component definition rendered directly on canvas (not through an
+  // instance) needs no special context: its fields' own connections ARE the
+  // definition's defaults, so they resolve the same way plain fields do.
   let childContent: React.ReactNode
   if (node.repeat && node.children.length > 0) {
     const templateId = node.children[0]
@@ -206,7 +219,7 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
       ))
     }
   } else {
-    childContent = node.children.map((c) => <NodeView key={c} id={c} ctx={ctxForChildren} ghost={ghost} />)
+    childContent = node.children.map((c) => <NodeView key={c} id={c} ctx={ctx} ghost={ghost} />)
   }
 
   return (
@@ -218,16 +231,21 @@ function FrameView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Fr
 
 function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<TextNode>) {
   const events = useNodeEvents(node.id, ghost)
+  const { devMode } = useInteraction()
   const doc = useStore((s) => s.doc)
+  // Chips keep a constant screen size; only dev mode subscribes to zoom.
+  const chipScale = useStore((s) => (s.mode === 'dev' ? 1 / s.viewport.zoom : 1))
   const editing = useStore((s) => s.editingId === node.id && !ghost)
   const setEditing = useStore((s) => s.setEditing)
   const select = useStore((s) => s.select)
   const commitTextEdit = useStore((s) => s.commitTextEdit)
-  const pushHistory = useStore((s) => s.pushHistory)
   const setToast = useStore((s) => s.setToast)
   const editRef = useRef<HTMLDivElement | null>(null)
 
-  const resolved = resolveContent(node.content, doc, ctx)
+  const resolved = resolveText(node, doc, ctx)
+  // Plain text and placeholder fields are the layer's own text, so they're
+  // editable in place; a live connection owns the value instead.
+  const editable = !node.field || node.field.connection.type === 'none'
 
   const s = node.style
   const style: CSSProperties = {
@@ -248,22 +266,46 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
   if (ghost) style.pointerEvents = 'none'
   if (resolved.missing) style.opacity = 0.45
 
+  // Dev mode shows annotations by default, like Figma's inspect view.
+  const chip = devMode && !ghost ? contentChip(node) : null
+  if (chip && style.position !== 'absolute') style.position = 'relative'
+
+  // One commit per edit session, whichever exit path fires first (Enter,
+  // Escape, blur, or unmount when something else clears editingId).
+  const committedRef = useRef(false)
+  // Mirror of the typed text: by unmount-cleanup time React has already
+  // nulled editRef, so the commit needs a copy that outlives the DOM node.
+  const draftRef = useRef('')
+  const commit = () => {
+    if (committedRef.current) return
+    committedRef.current = true
+    commitTextEdit(node.id, editRef.current ? editRef.current.innerText : draftRef.current)
+  }
+
   useLayoutEffect(() => {
-    if (editing && editRef.current) {
-      editRef.current.innerText = resolved.text
-      editRef.current.focus()
-      const range = document.createRange()
-      range.selectNodeContents(editRef.current)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    }
+    if (!editing || !editRef.current) return
+    committedRef.current = false
+    draftRef.current = resolved.text
+    editRef.current.innerText = resolved.text
+    editRef.current.focus()
+    const range = document.createRange()
+    range.selectNodeContents(editRef.current)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    // Clicking another node removes this editor without a blur event; the
+    // cleanup still runs first, so the typed text is not lost.
+    return () => commit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing])
 
   if (editing) {
     return (
       <div
+        // The key forces a fresh DOM node on both mode switches. Reusing the
+        // static div would leave the browser-typed content behind for React to
+        // render the committed text next to — the duplicate-text bug.
+        key="text-editing"
         data-node-id={node.id}
         ref={editRef}
         contentEditable
@@ -271,44 +313,62 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
         spellCheck={false}
         style={{ ...style, outline: 'none', userSelect: 'text' }}
         onPointerDown={(e) => e.stopPropagation()}
+        onInput={(e) => {
+          draftRef.current = e.currentTarget.innerText
+        }}
         onKeyDown={(e) => {
           e.stopPropagation()
-          if (e.key === 'Escape') {
+          if (e.key === 'Enter') {
             e.preventDefault()
-            commitTextEdit(node.id, editRef.current?.innerText ?? '')
+            if (e.altKey || e.shiftKey) {
+              // Option-Enter (and Shift-Enter): a newline inside the value.
+              document.execCommand('insertLineBreak')
+            } else {
+              commit()
+            }
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            commit()
           }
         }}
-        onBlur={() => commitTextEdit(node.id, editRef.current?.innerText ?? '')}
+        onBlur={commit}
       />
     )
   }
 
   return (
     <div
+      key="text-static"
       data-node-id={ghost ? undefined : node.id}
       style={style}
       {...events}
       onDoubleClick={
-        ghost
+        ghost || devMode
           ? undefined
           : (e) => {
               e.stopPropagation()
               select([node.id])
-              if (node.content.type === 'static') {
-                pushHistory()
+              if (editable) {
                 setEditing(node.id)
               } else {
-                const label =
-                  node.content.type === 'binding'
-                    ? `data path “${node.content.path}”`
-                    : node.content.type === 'generator'
-                      ? 'a text generator'
-                      : `component prop “${node.content.prop}”`
-                setToast(`This text is connected to ${label} — edit its source in the Content panel, or Detach it to make it editable.`)
+                const connection = node.field!.connection
+                const label = connection.type === 'binding' ? `data path “${connection.path}”` : 'a text generator'
+                setToast(
+                  `This text is connected to ${label} — disconnect it in the Content panel to edit the placeholder.`,
+                )
               }
             }
       }
     >
+      {chip && (
+        <span
+          className={`dev-chip content-chip ${chip.cls}`}
+          // Straddle the text's top edge so tight stacks stay legible under it.
+          style={{ transform: `translateY(-55%) scale(${chipScale})` }}
+        >
+          {chip.label}
+        </span>
+      )}
       {resolved.missing ? `⚠ ${resolved.text}` : resolved.text || ' '}
     </div>
   )
@@ -338,19 +398,11 @@ function InstanceView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps
     )
   }
 
-  // Resolve prop values in the *instance's* context (so overrides can use
-  // `item.x` bindings inside repeaters, generators vary per clone, etc.)
-  const propValues: Record<string, string> = {}
-  for (const prop of def.props ?? []) {
-    const source = node.overrides[prop.name] ?? { type: 'static' as const, value: prop.defaultValue }
-    propValues[prop.name] = resolveContent(source, doc, ctx).text
-  }
-
-  const innerCtx: RenderContext = {
-    ...ctx,
-    propValues,
-    seedOffset: (ctx.seedOffset ?? 0) + hashId(node.id),
-  }
+  // Only the fields this instance actually overrides get a value here — the
+  // rest fall through to their own definition connection, resolved in this
+  // same context so `item.*` bindings and generator variance still apply.
+  const innerCtx: RenderContext = { ...ctx, seedOffset: (ctx.seedOffset ?? 0) + hashId(node.id) }
+  const fieldValues = instanceFieldValues(doc, node, innerCtx)
 
   // The wrapper takes the instance's sizing but the definition's visual style.
   const style: CSSProperties = {
@@ -362,7 +414,7 @@ function InstanceView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps
   return (
     <div data-node-id={ghost ? undefined : node.id} style={style} {...events}>
       {def.children.map((c) => (
-        <NodeView key={c} id={c} ctx={innerCtx} ghost />
+        <NodeView key={c} id={c} ctx={{ ...innerCtx, fieldValues }} ghost />
       ))}
     </div>
   )

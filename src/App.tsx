@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
+import './devmode.css'
 import { Canvas } from './editor/Canvas'
 import { DEFAULT_AUTO_LAYOUT } from './model/types'
 import { AssetsPanel } from './panels/AssetsPanel'
 import { DataPanel } from './panels/DataPanel'
+import { DevPanel } from './panels/DevPanel'
 import { Inspector } from './panels/Inspector'
 import { LayersPanel } from './panels/LayersPanel'
 import { Toolbar } from './panels/Toolbar'
@@ -21,6 +23,22 @@ function useKeyboardShortcuts() {
       if (target?.closest('input, textarea, select, [contenteditable]')) return
       const state = useStore.getState()
       const mod = e.metaKey || e.ctrlKey
+
+      // Shift+D toggles Dev Mode — ignored mid text edit (⌘D still duplicates).
+      if (!mod && e.shiftKey && e.key.toLowerCase() === 'd') {
+        if (state.editingId) return
+        e.preventDefault()
+        state.setMode(state.mode === 'dev' ? 'design' : 'dev')
+        return
+      }
+      // Escape only clears selection, so it works in either mode.
+      if (e.key === 'Escape') {
+        state.select([])
+        if (state.mode === 'design') state.setTool('select')
+        return
+      }
+      // Dev mode is inspect-only: nothing below this line may touch the document.
+      if (state.mode === 'dev') return
 
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -65,10 +83,6 @@ function useKeyboardShortcuts() {
             state.deleteNodes(state.selection)
           }
           break
-        case 'Escape':
-          state.select([])
-          state.setTool('select')
-          break
         case 'ArrowLeft':
         case 'ArrowRight':
         case 'ArrowUp':
@@ -96,7 +110,7 @@ function usePasteImport() {
       const target = e.target
       if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable]')) return
       const state = useStore.getState()
-      if (state.editingId) return
+      if (state.editingId || state.mode === 'dev') return
       let html = e.clipboardData?.getData('text/html') ?? ''
       if (!html.trim()) {
         const plain = e.clipboardData?.getData('text/plain') ?? ''
@@ -116,9 +130,10 @@ export default function App() {
   usePasteImport()
   const leftTab = useStore((s) => s.leftTab)
   const setLeftTab = useStore((s) => s.setLeftTab)
+  const devMode = useStore((s) => s.mode === 'dev')
 
   return (
-    <div className="app">
+    <div className={`app ${devMode ? 'is-dev' : ''}`}>
       <Toolbar />
       <div className="app-body">
         <div className="left-panel">
@@ -140,9 +155,7 @@ export default function App() {
           </div>
         </div>
         <Canvas />
-        <div className="right-panel">
-          <Inspector />
-        </div>
+        <div className="right-panel">{devMode ? <DevPanel /> : <Inspector />}</div>
       </div>
     </div>
   )

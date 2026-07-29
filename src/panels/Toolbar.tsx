@@ -1,4 +1,4 @@
-import { CodeXml, Frame, MousePointer2, Redo2, RotateCcw, Type, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
+import { CodeXml, FileCode2, Frame, MousePointer2, Redo2, RotateCcw, Type, Undo2, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { EXAMPLE_HTML } from '../model/htmlImport'
 import { useStore, type Tool } from '../store'
@@ -12,6 +12,8 @@ const TOOLS: { value: Tool; icon: React.ReactNode; title: string }[] = [
 export function Toolbar() {
   const tool = useStore((s) => s.tool)
   const setTool = useStore((s) => s.setTool)
+  const devMode = useStore((s) => s.mode === 'dev')
+  const setMode = useStore((s) => s.setMode)
   const viewport = useStore((s) => s.viewport)
   const setViewport = useStore((s) => s.setViewport)
   const undo = useStore((s) => s.undo)
@@ -50,28 +52,34 @@ export function Toolbar() {
         <span className="brand-sub">connected text prototype</span>
       </div>
 
-      <div className="toolbar-tools">
-        {TOOLS.map((t) => (
-          <button
-            key={t.value}
-            className={`tool-btn ${tool === t.value ? 'active' : ''}`}
-            title={t.title}
-            onClick={() => setTool(t.value)}
-          >
-            {t.icon}
-          </button>
-        ))}
-      </div>
+      {!devMode && (
+        <div className="toolbar-tools">
+          {TOOLS.map((t) => (
+            <button
+              key={t.value}
+              className={`tool-btn ${tool === t.value ? 'active' : ''}`}
+              title={t.title}
+              onClick={() => setTool(t.value)}
+            >
+              {t.icon}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="toolbar-spacer" />
-      <div className="toolbar-hint">double-click text to edit · space+drag to pan · ⌘/ctrl+scroll to zoom</div>
+      <div className="toolbar-hint">
+        {devMode
+          ? 'inspect only · click a layer to read its content contract · shift+D to exit'
+          : 'double-click text to edit · space+drag to pan · ⌘/ctrl+scroll to zoom'}
+      </div>
       <div className="toolbar-spacer" />
 
       <div className="toolbar-group">
-        <button className="tool-btn" title="Undo (⌘Z)" disabled={!canUndo} onClick={undo}>
+        <button className="tool-btn" title="Undo (⌘Z)" disabled={devMode || !canUndo} onClick={undo}>
           <Undo2 size={15} />
         </button>
-        <button className="tool-btn" title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={redo}>
+        <button className="tool-btn" title="Redo (⇧⌘Z)" disabled={devMode || !canRedo} onClick={redo}>
           <Redo2 size={15} />
         </button>
       </div>
@@ -92,9 +100,10 @@ export function Toolbar() {
         <button
           className="tool-btn"
           title="Import HTML — or paste markup on the canvas"
+          disabled={devMode}
           onClick={() => setImportOpen(true)}
         >
-          <CodeXml size={15} />
+          <FileCode2 size={15} />
         </button>
       </div>
 
@@ -102,6 +111,7 @@ export function Toolbar() {
         <button
           className="tool-btn"
           title="Reset the demo document"
+          disabled={devMode}
           onClick={() => {
             if (window.confirm('Reset the canvas and data to the demo document?')) resetDoc()
           }}
@@ -109,6 +119,14 @@ export function Toolbar() {
           <RotateCcw size={15} />
         </button>
       </div>
+
+      <button
+        className={`dev-mode-toggle ${devMode ? 'active' : ''}`}
+        title="Dev Mode — inspect the content schema (Shift+D)"
+        onClick={() => setMode(devMode ? 'design' : 'dev')}
+      >
+        <CodeXml size={14} /> Dev Mode
+      </button>
 
       {importOpen && (
         <div

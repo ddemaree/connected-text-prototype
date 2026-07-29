@@ -1,23 +1,32 @@
-import { AlignCenter, AlignLeft, AlignRight, ArrowDown, ArrowRight, Component, Plus, Trash2, X } from 'lucide-react'
-import { useState } from 'react'
-import { listCollectionPaths, getByPath } from '../model/resolve'
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ArrowDown,
+  ArrowRight,
+  Component,
+  Plus,
+  Repeat,
+  Trash2,
+  X,
+} from 'lucide-react'
+import { GENERATOR_UNITS } from '../model/generators'
+import { componentFields, listCollectionPaths, getByPath, resolveText } from '../model/resolve'
+import { FIELD_INTENTS, fieldOwner, intentLabel } from '../model/schema'
 import {
   DEFAULT_AUTO_LAYOUT,
+  DEFAULT_FIELD_NAME_RE,
   type AnyNode,
-  type ContentSource,
+  type DesignDoc,
+  type FieldConnection,
   type FrameNode,
   type InstanceNode,
   type NodeId,
   type SizeMode,
   type TextNode,
 } from '../model/types'
-import {
-  enclosingCollectionPath,
-  enclosingComponent,
-  isAutoChild,
-  useStore,
-} from '../store'
-import { ContentSourceEditor } from '../ui/ContentSourceEditor'
+import { isAutoChild, useStore } from '../store'
+import { ConnectionEditor, previewContext } from '../ui/ConnectionEditor'
 import {
   Checkbox,
   ColorField,
@@ -26,6 +35,7 @@ import {
   Section,
   Segmented,
   SelectField,
+  TextArea,
   TextField,
 } from '../ui/controls'
 
@@ -47,11 +57,12 @@ export function Inspector() {
       {node.type === 'frame' && <AutoLayoutSection node={node} />}
       {node.type === 'frame' && <FrameStyleSection node={node} />}
       {node.type === 'text' && <TextStyleSection node={node} />}
-      {node.type === 'text' && <ContentSection node={node} />}
+      {node.type === 'text' && <ContentFieldSection node={node} />}
       {node.type === 'frame' && !node.isComponent && !node.repeat && <MakeComponentSection node={node} />}
       {node.type === 'frame' && node.isComponent && <ComponentSection node={node} />}
       {node.type === 'instance' && <InstanceSection node={node} />}
       {node.type === 'frame' && !node.isComponent && <RepeaterSection node={node} />}
+      {node.type !== 'frame' && <RepeatThisSection node={node} />}
     </div>
   )
 }
@@ -67,9 +78,9 @@ function EmptyInspector() {
           <li><b>Double-click</b> a text frame to edit it</li>
           <li><b>Space + drag</b> pans, <b>⌘/Ctrl + scroll</b> zooms</li>
           <li><b>Shift + A</b> toggles auto layout on a frame</li>
-          <li>Select a text frame to connect it to <b>JSON data</b> or a <b>generator</b></li>
-          <li>Turn a frame into a <b>component</b>, then bind its props</li>
-          <li>Make a frame a <b>repeater</b> to clone its first child from data</li>
+          <li>Mark a text layer as a <b>content field</b>, then connect it to a generator or to data</li>
+          <li>Turn a frame into a <b>component</b>: the fields inside it are its content API</li>
+          <li><b>Repeat this</b> wraps any layer in a repeater; bind the repeater to a collection</li>
         </ul>
       </div>
     </div>
@@ -193,6 +204,35 @@ function LayoutSection({ node }: { node: AnyNode }) {
           onChange={(m) => setSizeMode(node.id, 'height', m)}
         />
       </Row>
+      {node.type === 'frame' && !node.isComponent && (
+        <Row>
+          <RepeatThisButton node={node} />
+        </Row>
+      )}
+    </Section>
+  )
+}
+
+/** Structure-first repeater: wrap the selected layer instead of designating a wrapper. */
+function RepeatThisButton({ node }: { node: AnyNode }) {
+  const repeatNode = useStore((s) => s.repeatNode)
+  return (
+    <button
+      className="btn btn-repeater"
+      title="Wrap this layer in a new repeater frame, starting at 3 clones"
+      onClick={() => repeatNode(node.id)}
+    >
+      <Repeat size={13} /> Repeat this
+    </button>
+  )
+}
+
+/** Text and instances have no repeater section of their own — this is their door. */
+function RepeatThisSection({ node }: { node: TextNode | InstanceNode }) {
+  return (
+    <Section title="Repeater">
+      <RepeatThisButton node={node} />
+      <div className="insp-hint">Wraps this layer in a repeater frame that clones it 3 times to start.</div>
     </Section>
   )
 }
@@ -379,56 +419,147 @@ function TextStyleSection({ node }: { node: TextNode }) {
   )
 }
 
-function ContentSection({ node }: { node: TextNode }) {
+function connectionTitle(connection: FieldConnection): string {
+  if (connection.type === 'generator') return 'Connected to a generator'
+  if (connection.type === 'binding') return `Connected to data (${connection.path || 'no path'})`
+  return 'Content field — no connection yet'
+}
+
+/**
+ * The field badge. A field is a field whatever it reads from, so the colour
+ * never changes with the source — only the fill and the glyph do.
+ */
+function ConnectionChip({ connection }: { connection: FieldConnection }) {
+  const connected = connection.type !== 'none'
+  return (
+    <span
+      className={`content-chip chip-field ${connected ? 'is-connected' : ''}`}
+      title={connectionTitle(connection)}
+    >
+      {connected ? '⚡ connected' : '⌁ field'}
+    </span>
+  )
+}
+
+/** Where a node's fields belong: a bound repeater template, or a component definition. */
+function fieldScope(doc: DesignDoc, id: NodeId): { collectionPath?: string; componentName?: string } {
+  const owner = fieldOwner(doc, id)
+  if (!owner) return {}
+  const frame = doc.nodes[owner.id]
+  if (frame?.type !== 'frame') return {}
+  if (owner.kind === 'component') return { componentName: frame.name }
+  return frame.repeat?.mode === 'collection' ? { collectionPath: frame.repeat.path } : {}
+}
+
+/**
+ * Designation first: a text layer is plain until it is marked as a field, and
+ * only then does its name, intent and constraint mean anything. Designation
+ * also gates connection — the connection block is a child of the field, so
+ * plain text shows its own text and the Mark button, and nothing else.
+ */
+function ContentFieldSection({ node }: { node: TextNode }) {
   const doc = useStore((s) => s.doc)
-  const setContent = useStore((s) => s.setContent)
-  const exposeAsProp = useStore((s) => s.exposeAsProp)
-  const collectionPath = enclosingCollectionPath(doc, node.id)
-  const component = enclosingComponent(doc, node.id)
-  const [propName, setPropName] = useState('')
+  const markAsField = useStore((s) => s.markAsField)
+  const updateField = useStore((s) => s.updateField)
+  const field = node.field
+  const { collectionPath, componentName } = fieldScope(doc, node.id)
 
   return (
-    <Section title="Content" badge={<SourceBadge source={node.content} />}>
-      <ContentSourceEditor
-        source={node.content}
-        onChange={(src) => setContent(node.id, src)}
-        collectionPath={collectionPath}
-        propNames={component ? (component.props ?? []).map((p) => p.name) : undefined}
-      />
-      {component && node.content.type !== 'prop' && (
-        <div className="expose-row">
-          <TextField value={propName} placeholder="new prop name…" onChange={setPropName} />
-          <button
-            className="btn btn-component"
-            title="Create a component prop from this text and bind to it"
-            onClick={() => {
-              exposeAsProp(node.id, propName)
-              setPropName('')
-            }}
-          >
-            <Component size={12} /> Expose
+    <Section
+      title="Content field"
+      badge={
+        field ? (
+          <ConnectionChip connection={field.connection} />
+        ) : (
+          <span className="insp-hint-inline">plain text</span>
+        )
+      }
+    >
+      {!field && (
+        <>
+          <ConnectionEditor target={{ kind: 'node', node }} collectionPath={collectionPath} />
+          <button className="btn btn-mark-field" onClick={() => markAsField(node.id)}>
+            ＋ Mark as content field
           </button>
+        </>
+      )}
+
+      {field && (
+        <div className="content-field-set">
+          <Row label="Name">
+            <TextField value={field.name} onChange={(name) => updateField(node.id, { name })} />
+          </Row>
+          <Row label="Intent">
+            <SelectField
+              value={field.intent}
+              options={FIELD_INTENTS}
+              onChange={(intent) => updateField(node.id, { intent })}
+            />
+          </Row>
+          <Row label="Description">
+            <TextArea
+              value={field.description ?? ''}
+              rows={2}
+              placeholder="Notes for developers & editors"
+              onChange={(description) => updateField(node.id, { description })}
+            />
+          </Row>
+          <Row label="Max length">
+            <NumberField
+              value={field.maxLength?.count ?? 1}
+              min={1}
+              disabled={!field.maxLength}
+              onChange={(count) =>
+                updateField(node.id, { maxLength: { unit: field.maxLength?.unit ?? 'words', count } })
+              }
+            />
+            <SelectField
+              value={field.maxLength?.unit ?? 'words'}
+              disabled={!field.maxLength}
+              options={GENERATOR_UNITS}
+              onChange={(unit) =>
+                updateField(node.id, { maxLength: { unit, count: field.maxLength?.count ?? 20 } })
+              }
+            />
+            <button
+              className="mini-btn"
+              title={field.maxLength ? 'Clear max length' : 'Set a max length'}
+              onClick={() =>
+                updateField(node.id, { maxLength: field.maxLength ? null : { unit: 'words', count: 20 } })
+              }
+            >
+              {field.maxLength ? <X size={12} /> : <Plus size={12} />}
+            </button>
+          </Row>
+          {DEFAULT_FIELD_NAME_RE.test(field.name) && (
+            <div className="insp-hint">
+              {collectionPath
+                ? 'Default name — rename it to a key of the bound data and it connects itself.'
+                : 'Default name — rename it to say what this content is.'}
+            </div>
+          )}
         </div>
       )}
+
+      {field && (
+        <>
+          <div className="insp-subhead">Connection</div>
+          <ConnectionEditor target={{ kind: 'node', node }} collectionPath={collectionPath} />
+        </>
+      )}
+
       {collectionPath && (
         <div className="insp-hint">
           Inside a repeater bound to <code>{collectionPath}</code> — bind to <code>item.*</code> paths for per-item content.
         </div>
       )}
+      {componentName && (
+        <div className="insp-hint">
+          Inside component “{componentName}” — this field is part of its content API; instances override it by name.
+        </div>
+      )}
     </Section>
   )
-}
-
-function SourceBadge({ source }: { source: ContentSource }) {
-  const map = {
-    static: null,
-    binding: { label: 'data', cls: 'chip-binding' },
-    generator: { label: 'generator', cls: 'chip-generator' },
-    prop: { label: 'prop', cls: 'chip-prop' },
-  } as const
-  const m = map[source.type]
-  if (!m) return null
-  return <span className={`content-chip ${m.cls}`}>{m.label}</span>
 }
 
 function MakeComponentSection({ node }: { node: FrameNode }) {
@@ -438,60 +569,39 @@ function MakeComponentSection({ node }: { node: FrameNode }) {
       <button className="btn btn-component" onClick={() => makeComponent(node.id)}>
         <Component size={13} /> Create component
       </button>
-      <div className="insp-hint">Turn this frame into a reusable component with overridable props.</div>
+      <div className="insp-hint">Turn this frame into a reusable component; the fields inside it become its API.</div>
     </Section>
   )
 }
 
 function ComponentSection({ node }: { node: FrameNode }) {
-  const addPropToComponent = useStore((s) => s.addPropToComponent)
-  const removePropFromComponent = useStore((s) => s.removePropFromComponent)
-  const patchNode = useStore((s) => s.patchNode)
+  const doc = useStore((s) => s.doc)
+  const select = useStore((s) => s.select)
   const insertInstance = useStore((s) => s.insertInstance)
-  const [name, setName] = useState('')
-  const [def, setDef] = useState('')
-  const props = node.props ?? []
+  const fields = componentFields(doc, node.id)
 
   return (
-    <Section title="Component props" badge={<span className="content-chip chip-prop">❖ component</span>}>
-      {props.length === 0 && (
+    <Section title="Component" badge={<span className="content-chip chip-component">❖ component</span>}>
+      <div className="insp-subhead">Fields</div>
+      {fields.length === 0 ? (
         <div className="insp-hint">
-          No props yet. Add one here, or select a text layer inside and “Expose” it.
+          No fields yet. Select a text layer inside and mark it as a content field.
         </div>
-      )}
-      {props.map((p) => (
-        <div className="prop-row" key={p.name}>
-          <span className="prop-name" title="Prop name">{p.name}</span>
-          <TextField
-            value={p.defaultValue}
-            onChange={(v) =>
-              patchNode(node.id, {
-                props: props.map((q) => (q.name === p.name ? { ...q, defaultValue: v } : q)),
-              })
-            }
-          />
-          <button className="mini-btn" title="Remove prop" onClick={() => removePropFromComponent(node.id, p.name)}>
-            <Trash2 size={12} />
+      ) : (
+        fields.map(({ node: text, field }) => (
+          <button
+            key={field.name}
+            className="field-row"
+            title="Select the text layer that declares this field"
+            onClick={() => select([text.id])}
+          >
+            <span className="field-row-name">{field.name}</span>
+            <span className="field-row-intent">{intentLabel(field.intent)}</span>
+            <ConnectionChip connection={field.connection} />
           </button>
-        </div>
-      ))}
-      <div className="prop-row">
-        <TextField value={name} placeholder="name" onChange={setName} />
-        <TextField value={def} placeholder="default value" onChange={setDef} />
-        <button
-          className="mini-btn"
-          title="Add prop"
-          onClick={() => {
-            if (name.trim()) {
-              addPropToComponent(node.id, name, def)
-              setName('')
-              setDef('')
-            }
-          }}
-        >
-          <Plus size={12} />
-        </button>
-      </div>
+        ))
+      )}
+      <div className="insp-hint">Fields inside this component are its content API.</div>
       <button
         className="btn btn-component"
         onClick={() => {
@@ -522,38 +632,59 @@ function InstanceSection({ node }: { node: InstanceNode }) {
       </Section>
     )
   }
-  const collectionPath = enclosingCollectionPath(doc, node.id)
-  const props = def.props ?? []
+  const { collectionPath } = fieldScope(doc, node.id)
+  const ctx = previewContext(doc, collectionPath)
+  const fields = componentFields(doc, node.componentId)
 
   return (
-    <Section title={`Instance of “${def.name}”`} badge={<span className="content-chip chip-prop">◇ instance</span>}>
-      {props.length === 0 && <div className="insp-hint">This component has no props to override.</div>}
-      {props.map((p) => {
-        const override = node.overrides[p.name]
+    <Section title={`Instance of “${def.name}”`} badge={<span className="content-chip chip-component">◇ instance</span>}>
+      {fields.length === 0 && (
+        <div className="insp-hint">
+          This component has no fields yet — mark a text layer inside the definition to give it one.
+        </div>
+      )}
+      {fields.map(({ node: defNode, field }) => {
+        const override = node.overrides[field.name]
+        const defaultText = resolveText(defNode, doc, ctx).text
         return (
-          <div className="instance-prop" key={p.name}>
-            <div className="instance-prop-head">
-              <span className="prop-name">{p.name}</span>
-              {override ? (
-                <button className="mini-btn" title="Reset to component default" onClick={() => setInstanceOverride(node.id, p.name, null)}>
-                  <X size={11} />
+          <div className="instance-field" key={field.name}>
+            <div className="instance-field-head">
+              <span className="field-row-name">{field.name}</span>
+              {!override && (
+                <button
+                  className="link-btn"
+                  title="Give this instance its own value for this field"
+                  onClick={() =>
+                    setInstanceOverride(node.id, field.name, { type: 'static', value: defaultText })
+                  }
+                >
+                  Override
                 </button>
-              ) : (
-                <span className="insp-hint-inline">default</span>
               )}
             </div>
-            <ContentSourceEditor
-              compact
-              source={override ?? { type: 'static', value: p.defaultValue }}
-              onChange={(src) => setInstanceOverride(node.id, p.name, src)}
-              collectionPath={collectionPath}
-            />
+            {override ? (
+              <ConnectionEditor
+                compact
+                collectionPath={collectionPath}
+                target={{
+                  kind: 'override',
+                  instanceId: node.id,
+                  fieldName: field.name,
+                  value: override,
+                  intent: field.intent,
+                }}
+              />
+            ) : (
+              <div className="instance-field-default" title="Value from the component definition">
+                {defaultText || '(empty)'}
+              </div>
+            )}
           </div>
         )
       })}
       {collectionPath && (
         <div className="insp-hint">
-          Inside a repeater bound to <code>{collectionPath}</code> — bind props to <code>item.*</code> paths.
+          Inside a repeater bound to <code>{collectionPath}</code> — override fields with <code>item.*</code> paths.
         </div>
       )}
       <Row>
@@ -567,38 +698,53 @@ function InstanceSection({ node }: { node: InstanceNode }) {
 function RepeaterSection({ node }: { node: FrameNode }) {
   const doc = useStore((s) => s.doc)
   const setRepeat = useStore((s) => s.setRepeat)
+  const makeRepeater = useStore((s) => s.makeRepeater)
+  const addEmptyState = useStore((s) => s.addEmptyState)
   const collections = listCollectionPaths(doc.data)
   const rep = node.repeat ?? null
-  const mode = rep?.mode ?? 'off'
+
+  if (!rep) {
+    return (
+      <Section title="Repeater">
+        <button
+          className="btn btn-repeater"
+          disabled={node.children.length === 0}
+          title="Repeat this frame’s first child"
+          onClick={() => makeRepeater(node.id)}
+        >
+          <Repeat size={13} /> Make repeater
+        </button>
+        <div className="insp-hint">
+          {node.children.length === 0
+            ? 'A repeater clones its first child — give this frame a child first.'
+            : 'Clones this frame’s first child, 3 times to start; connect it to a collection when you have one.'}
+        </div>
+      </Section>
+    )
+  }
+
   const itemCount =
-    rep?.mode === 'collection'
+    rep.mode === 'collection'
       ? (() => {
           const v = getByPath(doc.data, rep.path)
           return Array.isArray(v) ? v.length : 0
         })()
-      : rep?.mode === 'count'
-        ? rep.count
-        : 0
+      : rep.count
 
   return (
-    <Section
-      title="Repeater"
-      badge={rep ? <span className="content-chip chip-repeater">⟳ {itemCount} items</span> : undefined}
-    >
+    <Section title="Repeater" badge={<span className="content-chip chip-repeater">⟳ {itemCount} items</span>}>
       <Segmented
-        value={mode}
+        value={rep.mode}
         options={[
-          { value: 'off', label: 'Off' },
-          { value: 'count', label: 'Count', title: 'Repeat the first child a fixed number of times' },
-          { value: 'collection', label: 'Data', title: 'Repeat the first child once per item of a collection' },
+          { value: 'count', label: 'Count', title: 'A fixed number of clones — the repeater’s placeholder state' },
+          { value: 'collection', label: 'Data', title: 'One clone per item of a data collection' },
         ]}
-        onChange={(m) => {
-          if (m === 'off') setRepeat(node.id, null)
-          else if (m === 'count') setRepeat(node.id, { mode: 'count', count: 4 })
+        onChange={(mode) => {
+          if (mode === 'count') setRepeat(node.id, { mode: 'count', count: 3 })
           else setRepeat(node.id, { mode: 'collection', path: collections[0]?.path ?? '' })
         }}
       />
-      {rep?.mode === 'count' && (
+      {rep.mode === 'count' && (
         <Row label="Count">
           <NumberField
             value={rep.count}
@@ -608,7 +754,7 @@ function RepeaterSection({ node }: { node: FrameNode }) {
           />
         </Row>
       )}
-      {rep?.mode === 'collection' && (
+      {rep.mode === 'collection' && (
         <Row label="Collection">
           <SelectField
             value={rep.path}
@@ -622,17 +768,29 @@ function RepeaterSection({ node }: { node: FrameNode }) {
           />
         </Row>
       )}
-      {rep ? (
-        <div className="insp-hint">
-          The <b>first child</b> is the repeated template
-          {node.children.length > 1
-            ? '; the second child is the empty state, shown when there are 0 items.'
-            : '. Add a second child to design the empty state.'}
-          {rep.mode === 'collection' && ' Bind text inside the template to item.* paths.'}
-        </div>
-      ) : (
-        <div className="insp-hint">Repeat this frame’s first child from a count or a data collection.</div>
+      {node.children.length === 1 && (
+        <button
+          className="btn"
+          title="Add a second child, shown when the collection is empty"
+          onClick={() => addEmptyState(node.id)}
+        >
+          <Plus size={13} /> Add empty state
+        </button>
       )}
+      <div className="insp-hint">
+        The <b>first child</b> is the repeated template
+        {node.children.length > 1
+          ? '; the second is the empty state, shown when there are 0 items.'
+          : '.'}
+        {rep.mode === 'collection' && ' Bind fields inside the template to item.* paths.'}
+      </div>
+      <button
+        className="btn btn-detach"
+        title="Demote back to an ordinary frame, keeping its children"
+        onClick={() => setRepeat(node.id, null)}
+      >
+        Remove repeater
+      </button>
     </Section>
   )
 }

@@ -3,6 +3,7 @@ import {
   newId,
   type AnyNode,
   type AutoLayout,
+  type FieldIntent,
   type FrameNode,
   type NodeId,
   type SizeMode,
@@ -228,6 +229,8 @@ interface IrText extends IrCommon {
   widthMode: SizeMode
   /** Button labels stay static: they are chrome, not item content. */
   bindable: boolean
+  /** Set when the text is a collection template slot: the proposed designation. */
+  fieldName?: string
   binding?: string
 }
 
@@ -865,6 +868,7 @@ function detectRepeats(frame: IrFrame, used: Set<string>, out: DetectResult): vo
     const name = uniqueCollectionName(frame.slug || 'items', used)
     used.add(name)
     collectSlots(template).forEach((slot, i) => {
+      slot.fieldName = templateFields[i]
       slot.binding = `item.${templateFields[i]}`
     })
     frame.children = [template]
@@ -878,6 +882,13 @@ function detectRepeats(frame: IrFrame, used: Set<string>, out: DetectResult): vo
 }
 
 // ---- IR → nodes ----
+
+/** Inference proposes: the markup's tag is the best guess at what the text IS. */
+function intentForTag(tag: string): FieldIntent {
+  if (tag === 'h1' || tag === 'h2' || tag === 'h3') return 'title'
+  if (tag === 'p') return 'paragraph'
+  return 'label'
+}
 
 function emit(ir: IrNode, parentId: NodeId | null, out: AnyNode[]): NodeId {
   if (ir.kind === 'text') {
@@ -893,7 +904,15 @@ function emit(ir: IrNode, parentId: NodeId | null, out: AnyNode[]): NodeId {
       widthMode: ir.widthMode,
       heightMode: 'hug',
       style: ir.style,
-      content: ir.binding ? { type: 'binding', path: ir.binding } : { type: 'static', value: ir.text },
+      text: ir.text,
+    }
+    // Extracted template slots arrive as proposed designations: marked and bound.
+    if (ir.binding && ir.fieldName) {
+      node.field = {
+        name: ir.fieldName,
+        intent: intentForTag(ir.tag),
+        connection: { type: 'binding', path: ir.binding },
+      }
     }
     out.push(node)
     return node.id

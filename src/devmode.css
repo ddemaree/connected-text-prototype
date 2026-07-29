@@ -1,0 +1,470 @@
+/* ===== Dev Mode ===== */
+
+:root {
+  --dev: #2ec27e;
+  --dev-soft: rgba(46, 194, 126, 0.16);
+  --dev-line: rgba(46, 194, 126, 0.45);
+}
+
+/* ---------- toolbar toggle ---------- */
+
+.dev-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dev-mode-toggle:hover {
+  color: var(--text);
+  border-color: #454545;
+}
+
+.dev-mode-toggle.active {
+  background: var(--dev);
+  border-color: var(--dev);
+  color: #08170f;
+}
+
+.app.is-dev .toolbar {
+  border-bottom-color: var(--dev-line);
+}
+
+.app.is-dev .right-panel {
+  border-left-color: var(--dev-line);
+}
+
+/* ---------- canvas annotations ---------- */
+
+.content-chip.dev-chip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: left top;
+  z-index: 3;
+  pointer-events: none;
+  background: #1e1e1e;
+  color: var(--text);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.5;
+  text-align: left;
+  text-transform: none;
+}
+
+/*
+ * Dev-mode field chips sit on the artwork, so they get a light card. Same two
+ * states as everywhere else: hollow while unconnected, solid once connected —
+ * never a per-source colour.
+ */
+.content-chip.dev-chip.chip-field {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(26, 127, 78, 0.55);
+  color: #1a7f4e;
+}
+
+.content-chip.dev-chip.chip-field.is-connected {
+  background: var(--dev);
+  border-color: var(--dev);
+  color: #08170f;
+}
+
+/* ---------- panel ---------- */
+
+.dev-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.dev-node-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-kind-badge.kind-dev {
+  background: var(--dev-soft);
+  color: var(--dev);
+}
+
+.node-kind-badge.kind-collection {
+  background: var(--repeater-soft);
+  color: var(--repeater);
+}
+
+.dev-type-link {
+  display: block;
+  width: 100%;
+  padding: 0 12px 8px;
+  font-size: 10.5px;
+  color: var(--dev);
+  text-align: left;
+}
+
+.dev-type-link:hover {
+  text-decoration: underline;
+}
+
+.dev-type-link.is-static {
+  color: var(--text-faint);
+  cursor: default;
+  text-decoration: none;
+}
+
+.dev-caption {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* ---------- publish status ---------- */
+
+.dev-publish {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.dev-publish-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dev-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.dev-dot.is-published {
+  background: var(--dev);
+  box-shadow: 0 0 0 3px var(--dev-soft);
+}
+
+.dev-publish-sub {
+  margin-top: -5px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.dev-drift {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+}
+
+.dev-drift:hover {
+  color: var(--text);
+}
+
+.dev-caret {
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+
+.dev-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.dev-drift-action {
+  margin-left: auto;
+  color: var(--dev);
+}
+
+.dev-migrations {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 190px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.dev-migration {
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.dev-migration.is-add-type,
+.dev-migration.is-add-field {
+  border-left-color: var(--dev);
+}
+
+.dev-migration.is-remove-type,
+.dev-migration.is-remove-field {
+  border-left-color: var(--danger);
+}
+
+.dev-migration.is-rename-field,
+.dev-migration.is-retype-field,
+.dev-migration.is-constraint-change {
+  border-left-color: var(--generator);
+}
+
+.dev-publish-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.dev-publish-actions .btn {
+  flex: 1;
+}
+
+.btn.btn-dev {
+  background: var(--dev);
+  border-color: var(--dev);
+  color: #08170f;
+  font-weight: 600;
+}
+
+.btn.btn-dev:hover:not(:disabled) {
+  background: #45d295;
+}
+
+/* ---------- coverage + types ---------- */
+
+.dev-coverage {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.dev-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.dev-meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dev);
+}
+
+.dev-type {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.dev-type-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.dev-type-name {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev-type-head:hover .dev-type-name {
+  color: var(--dev);
+}
+
+/* ---------- field rows ---------- */
+
+.dev-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.dev-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 1px 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.dev-field:first-child {
+  border-top: none;
+}
+
+.dev-field-name {
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev-field-type {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--repeater);
+}
+
+.dev-field-meta {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ---------- list view (click to copy) ---------- */
+
+.dev-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dev-list-row {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  align-items: baseline;
+  gap: 3px 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 5px;
+  text-align: left;
+}
+
+.dev-list-row:hover {
+  background: var(--panel-2);
+}
+
+.dev-list-label {
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.dev-list-value {
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dev-list-copy {
+  opacity: 0;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.dev-list-row:hover .dev-list-copy {
+  opacity: 1;
+}
+
+.dev-list-row.is-field {
+  grid-template-columns: 1fr auto;
+}
+
+.dev-list-row.is-field .dev-list-label {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--component);
+}
+
+.dev-list-source {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dev-list-row.is-field .dev-list-value {
+  grid-column: 1 / -1;
+}
+
+/* ---------- code ---------- */
+
+.dev-code-tools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.field.dev-format {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 2px 6px;
+  font-size: 10.5px;
+}
+
+pre.dev-code {
+  background: #161616;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #cde3cd;
+  white-space: pre;
+  overflow: auto;
+  max-height: 320px;
+}
+
+.dev-code-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ===== Field-first ===== */
+
+
+/* Publish card: default-name lint, amber and non-blocking. */
+.dev-lint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--generator);
+}
+
+.dev-lint-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--generator);
+  flex-shrink: 0;
+}

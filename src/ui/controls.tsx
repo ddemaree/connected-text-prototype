@@ -102,10 +102,15 @@ export function TextArea({
   value,
   onChange,
   rows = 3,
+  placeholder,
+  autoSave,
 }: {
   value: string
   onChange: (v: string) => void
   rows?: number
+  placeholder?: string
+  /** Save on every keystroke instead of on blur. */
+  autoSave?: boolean
 }) {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
@@ -114,7 +119,11 @@ export function TextArea({
       className="field textarea-field"
       rows={rows}
       value={text}
-      onChange={(e) => setText(e.target.value)}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setText(e.target.value)
+        if (autoSave) onChange(e.target.value)
+      }}
       onBlur={() => text !== value && onChange(text)}
     />
   )

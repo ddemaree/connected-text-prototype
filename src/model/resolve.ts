@@ -1,5 +1,13 @@
 import { generateText } from './generators'
-import type { ContentSource, DesignDoc, RenderContext } from './types'
+import type {
+  DesignDoc,
+  InstanceNode,
+  NodeId,
+  OverrideValue,
+  RenderContext,
+  TextField,
+  TextNode,
+} from './types'
 
 /**
  * Resolve a dot/bracket path like "articles[2].title" against a value.
@@ -33,32 +41,93 @@ function stringify(v: unknown): string {
   return JSON.stringify(v)
 }
 
+function resolveBinding(path: string, doc: DesignDoc, ctx: RenderContext): { text: string; missing: boolean } {
+  const v = getByPath(doc.data, path, ctx)
+  if (v === undefined) return { text: path, missing: true }
+  return { text: stringify(v), missing: false }
+}
+
 /**
- * Resolve a content source to the string shown on canvas.
- * Returns null when the source cannot be resolved (missing path/prop),
- * so callers can show a placeholder.
+ * The string a text layer shows. Plain text and unconnected fields show their
+ * own literal text; connected fields resolve their connection — unless an
+ * enclosing instance overrode the field, which wins over anything the
+ * definition says.
  */
-export function resolveContent(
-  source: ContentSource,
+export function resolveText(
+  node: TextNode,
   doc: DesignDoc,
   ctx: RenderContext = {},
 ): { text: string; missing: boolean } {
-  switch (source.type) {
-    case 'static':
-      return { text: source.value, missing: false }
-    case 'binding': {
-      const v = getByPath(doc.data, source.path, ctx)
-      if (v === undefined) return { text: source.path, missing: true }
-      return { text: stringify(v), missing: false }
-    }
-    case 'generator':
-      return { text: generateText(source.config, ctx.seedOffset ?? 0), missing: false }
-    case 'prop': {
-      const v = ctx.propValues?.[source.prop]
-      if (v === undefined) return { text: source.prop, missing: true }
-      return { text: v, missing: false }
-    }
+  const field = node.field
+  if (field) {
+    const override = ctx.fieldValues?.[field.name]
+    if (override !== undefined) return { text: override, missing: false }
   }
+  if (!field || field.connection.type === 'none') return { text: node.text, missing: false }
+  if (field.connection.type === 'generator') {
+    return { text: generateText(field.connection.config, ctx.seedOffset ?? 0), missing: false }
+  }
+  return resolveBinding(field.connection.path, doc, ctx)
+}
+
+/** Resolve one per-instance override value. */
+export function resolveOverride(
+  value: OverrideValue,
+  doc: DesignDoc,
+  ctx: RenderContext = {},
+): { text: string; missing: boolean } {
+  switch (value.type) {
+    case 'static':
+      return { text: value.value, missing: false }
+    case 'generator':
+      return { text: generateText(value.config, ctx.seedOffset ?? 0), missing: false }
+    case 'binding':
+      return resolveBinding(value.path, doc, ctx)
+  }
+}
+
+/**
+ * A component's content API: the designated fields inside its definition, in
+ * tree order, deduped by field name (first one wins).
+ */
+export function componentFields(
+  doc: DesignDoc,
+  componentId: NodeId,
+): { node: TextNode; field: TextField }[] {
+  const out: { node: TextNode; field: TextField }[] = []
+  const seen = new Set<string>()
+  const visit = (id: NodeId) => {
+    const node = doc.nodes[id]
+    if (!node) return
+    if (node.type === 'text' && node.field) {
+      const name = node.field.name
+      if (!seen.has(name)) {
+        seen.add(name)
+        out.push({ node, field: node.field })
+      }
+    }
+    if (node.type === 'frame') node.children.forEach(visit)
+  }
+  visit(componentId)
+  return out
+}
+
+/**
+ * The RenderContext.fieldValues for an instance: only the fields it actually
+ * overrides. Un-overridden fields are left out on purpose, so the definition's
+ * own connection resolves naturally in the instance's context.
+ */
+export function instanceFieldValues(
+  doc: DesignDoc,
+  instance: InstanceNode,
+  ctx: RenderContext = {},
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const { field } of componentFields(doc, instance.componentId)) {
+    const override = instance.overrides[field.name]
+    if (override) out[field.name] = resolveOverride(override, doc, ctx).text
+  }
+  return out
 }
 
 export interface DataPath {
@@ -126,7 +195,7 @@ export function listCollectionPaths(data: unknown): CollectionPath[] {
 }
 
 /**
- * Paths available to a text binding in a given spot: all leaf paths of the
+ * Paths available to a field binding in a given spot: all leaf paths of the
  * document data, plus `item.*` paths when inside a collection-bound repeater
  * (derived from the collection's first item).
  */

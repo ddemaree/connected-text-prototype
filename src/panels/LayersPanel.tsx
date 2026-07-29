@@ -11,18 +11,18 @@ function NodeIcon({ node }: { node: AnyNode }) {
   return <Frame size={12} className="layer-icon" />
 }
 
+/**
+ * Fields get a green dot whatever they read from: hollow while unconnected,
+ * filled once a connection is attached. Plain text gets nothing.
+ */
 function sourceDot(node: AnyNode): string | null {
-  if (node.type !== 'text') return null
-  switch (node.content.type) {
-    case 'binding':
-      return 'dot-binding'
-    case 'generator':
-      return 'dot-generator'
-    case 'prop':
-      return 'dot-prop'
-    default:
-      return null
-  }
+  if (node.type !== 'text' || !node.field) return null
+  return node.field.connection.type === 'none' ? 'dot-field' : 'dot-connected'
+}
+
+const DOT_TITLES: Record<string, string> = {
+  'dot-field': 'Content field (placeholder)',
+  'dot-connected': 'Content field — connected',
 }
 
 function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
@@ -32,6 +32,8 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
   const select = useStore((s) => s.select)
   const setHovered = useStore((s) => s.setHovered)
   const renameNode = useStore((s) => s.renameNode)
+  // Renaming edits the document: dev mode keeps selection and hover only.
+  const devMode = useStore((s) => s.mode === 'dev')
   const [collapsed, setCollapsed] = useState(false)
   const [renaming, setRenaming] = useState(false)
   if (!node) return null
@@ -47,7 +49,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
         className={`layer-row ${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''}`}
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={(e) => select([id], e.shiftKey)}
-        onDoubleClick={() => setRenaming(true)}
+        onDoubleClick={devMode ? undefined : () => setRenaming(true)}
         onMouseEnter={() => setHovered(id)}
         onMouseLeave={() => setHovered(null)}
       >
@@ -65,7 +67,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
           <span className="layer-chevron" />
         )}
         <NodeIcon node={node} />
-        {renaming ? (
+        {renaming && !devMode ? (
           <input
             className="layer-rename"
             autoFocus
@@ -86,7 +88,7 @@ function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
             {node.name}
           </span>
         )}
-        {dot && <span className={`layer-dot ${dot}`} title="Connected text" />}
+        {dot && <span className={`layer-dot ${dot}`} title={DOT_TITLES[dot]} />}
         {repeatBadge && <span className="layer-repeat-badge">⟳ {repeatBadge}</span>}
       </div>
       {!collapsed && children.map((c) => <LayerRow key={c} id={c} depth={depth + 1} />)}

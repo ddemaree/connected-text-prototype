@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AnyNode, NodeId } from '../model/types'
 import { isAutoChild, useStore } from '../store'
+import { contentChip } from './RenderNode'
 
 interface ScreenRect {
   id: NodeId
@@ -36,21 +37,6 @@ function outlineClass(node: AnyNode | undefined): string {
   return ''
 }
 
-function contentChip(node: AnyNode | undefined): { label: string; cls: string } | null {
-  if (!node || node.type !== 'text') return null
-  const c = node.content
-  switch (c.type) {
-    case 'static':
-      return null
-    case 'binding':
-      return { label: `{ } ${c.path}`, cls: 'chip-binding' }
-    case 'generator':
-      return { label: `⚡ ${c.config.kind} · ${c.config.count} ${c.config.unit}`, cls: 'chip-generator' }
-    case 'prop':
-      return { label: `◇ ${c.prop}`, cls: 'chip-prop' }
-  }
-}
-
 export function SelectionOverlay({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
   const [state, setState] = useState<OverlayState>({ selected: [], hovered: null })
   const stateRef = useRef(state)
@@ -84,6 +70,7 @@ export function SelectionOverlay({ containerRef }: { containerRef: React.RefObje
   const nodes = useStore((s) => s.doc.nodes)
   const zoom = useStore((s) => s.viewport.zoom)
   const editingId = useStore((s) => s.editingId)
+  const devMode = useStore((s) => s.mode === 'dev')
   const single = state.selected.length === 1 ? state.selected[0] : null
   const singleNode = single ? nodes[single.id] : undefined
 
@@ -151,7 +138,8 @@ export function SelectionOverlay({ containerRef }: { containerRef: React.RefObje
       )}
       {state.selected.map((r) => {
         const node = nodes[r.id]
-        const chip = contentChip(node)
+        // Dev mode already shows the always-on canvas annotation — don't double up.
+        const chip = devMode ? null : contentChip(node)
         const isEditing = editingId === r.id
         return (
           <div
@@ -165,18 +153,20 @@ export function SelectionOverlay({ containerRef }: { containerRef: React.RefObje
             </div>
             {!isEditing && state.selected.length === 1 && (
               <>
-                {HANDLES.map((h) => (
-                  <div
-                    key={h.key}
-                    className="resize-handle"
-                    style={{
-                      left: `${h.x * 100}%`,
-                      top: `${h.y * 100}%`,
-                      cursor: h.cursor,
-                    }}
-                    onPointerDown={(e) => beginResize(e, h.key)}
-                  />
-                ))}
+                {/* Resizing is an edit: dev mode keeps the outline and measurements only. */}
+                {!devMode &&
+                  HANDLES.map((h) => (
+                    <div
+                      key={h.key}
+                      className="resize-handle"
+                      style={{
+                        left: `${h.x * 100}%`,
+                        top: `${h.y * 100}%`,
+                        cursor: h.cursor,
+                      }}
+                      onPointerDown={(e) => beginResize(e, h.key)}
+                    />
+                  ))}
                 <div className="size-badge">
                   {Math.round(r.width / zoom)} × {Math.round(r.height / zoom)}
                 </div>

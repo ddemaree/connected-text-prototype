@@ -300,9 +300,8 @@ export function Canvas() {
         return
       }
       e.stopPropagation()
-      if (state.editingId && state.editingId !== id) {
-        // Clicking outside the edited text: the blur handler commits it.
-      }
+      // Clicking outside an edited text clears editingId via select(); the
+      // editor commits the typed text from its unmount cleanup.
       if (e.shiftKey) {
         state.select([id], true)
         return

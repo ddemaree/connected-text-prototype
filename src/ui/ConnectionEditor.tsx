@@ -139,6 +139,7 @@ export function ConnectionEditor({
             value={target.node.text}
             rows={compact ? 2 : 3}
             placeholder={field ? 'Placeholder text' : 'Text'}
+            autoSave
             onChange={(v) => setText(target.node.id, v)}
           />
           {field && (
@@ -151,6 +152,7 @@ export function ConnectionEditor({
         <TextArea
           value={target.value.value}
           rows={compact ? 2 : 3}
+          autoSave
           onChange={(v) =>
             setInstanceOverride(target.instanceId, target.fieldName, { type: 'static', value: v })
           }

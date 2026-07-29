@@ -286,16 +286,27 @@ function shownText(doc: DesignDoc, node: TextNode): string {
 
 export const useStore = create<EditorState>()(
   immer((set, get) => {
-    const withHistory = (fn: (state: { doc: DesignDoc } & EditorState) => void) => {
+    // Consecutive mutations that share a coalesce key (per-keystroke typing)
+    // collapse into one undo entry; any other mutation ends the burst.
+    let coalesceKey: string | null = null
+
+    const withHistory = (fn: (state: { doc: DesignDoc } & EditorState) => void, coalesce?: string) => {
       // Snapshot the committed (non-draft) doc — immer drafts can't be structuredCloned.
       const { past, doc } = get()
-      const newPast = [...past, snapshot(doc)]
-      if (newPast.length > HISTORY_LIMIT) newPast.shift()
+      let newPast = past
+      if (!(coalesce && coalesce === coalesceKey)) {
+        newPast = [...past, snapshot(doc)]
+        if (newPast.length > HISTORY_LIMIT) newPast.shift()
+      }
+      coalesceKey = coalesce ?? null
       set((s) => {
         s.past = newPast
         s.future = []
         fn(s as unknown as { doc: DesignDoc } & EditorState)
       })
+    }
+    const endCoalesce = () => {
+      coalesceKey = null
     }
 
     return {
@@ -347,12 +358,14 @@ export const useStore = create<EditorState>()(
       setEditing: (id) => set({ editingId: id }),
 
       pushHistory: () => {
+        endCoalesce()
         const { past, doc } = get()
         const newPast = [...past, snapshot(doc)]
         if (newPast.length > HISTORY_LIMIT) newPast.shift()
         set({ past: newPast, future: [] })
       },
       undo: () => {
+        endCoalesce()
         const { past, future, doc, selection } = get()
         const prev = past[past.length - 1]
         if (!prev) return
@@ -365,6 +378,7 @@ export const useStore = create<EditorState>()(
         })
       },
       redo: () => {
+        endCoalesce()
         const { past, future, doc, selection } = get()
         const next = future[future.length - 1]
         if (!next) return
@@ -583,16 +597,23 @@ export const useStore = create<EditorState>()(
           // Connected fields own their value; their text is only a placeholder.
           if (node.field && node.field.connection.type !== 'none') return
           node.text = value
-        }),
+        }, `text:${id}`),
 
-      commitTextEdit: (id, value) =>
+      commitTextEdit: (id, value) => {
+        const { doc, editingId } = get()
+        const node = doc.nodes[id]
+        const writable = node?.type === 'text' && (!node.field || node.field.connection.type === 'none')
+        // An edit that changed nothing must not cost an undo entry.
+        if (!writable || node.text === value) {
+          if (editingId === id) set({ editingId: null })
+          return
+        }
         withHistory((s) => {
-          const node = s.doc.nodes[id]
-          if (node?.type === 'text' && (!node.field || node.field.connection.type === 'none')) {
-            node.text = value
-          }
-          s.editingId = null
-        }),
+          const n = s.doc.nodes[id]
+          if (n?.type === 'text') n.text = value
+          if (s.editingId === id) s.editingId = null
+        })
+      },
 
       markAsField: (id) =>
         withHistory((s) => {
@@ -717,12 +738,16 @@ export const useStore = create<EditorState>()(
       },
 
       setInstanceOverride: (instanceId, fieldName, value) =>
-        withHistory((s) => {
-          const node = s.doc.nodes[instanceId]
-          if (node?.type !== 'instance') return
-          if (value === null) delete node.overrides[fieldName]
-          else node.overrides[fieldName] = value
-        }),
+        withHistory(
+          (s) => {
+            const node = s.doc.nodes[instanceId]
+            if (node?.type !== 'instance') return
+            if (value === null) delete node.overrides[fieldName]
+            else node.overrides[fieldName] = value
+          },
+          // Static values arrive per keystroke from the sidebar; one undo entry.
+          value?.type === 'static' ? `override:${instanceId}:${fieldName}` : undefined,
+        ),
 
       detachInstance: (instanceId) =>
         withHistory((s) => {
@@ -895,6 +920,7 @@ export const useStore = create<EditorState>()(
         }),
 
       resetDoc: () => {
+        endCoalesce()
         const { past, doc } = get()
         set({
           past: [...past, snapshot(doc)],

@@ -274,22 +274,42 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
   const chip = devMode && !ghost ? contentChip(node) : null
   if (chip && style.position !== 'absolute') style.position = 'relative'
 
+  // One commit per edit session, whichever exit path fires first (Enter,
+  // Escape, blur, or unmount when something else clears editingId).
+  const committedRef = useRef(false)
+  // Mirror of the typed text: by unmount-cleanup time React has already
+  // nulled editRef, so the commit needs a copy that outlives the DOM node.
+  const draftRef = useRef('')
+  const commit = () => {
+    if (committedRef.current) return
+    committedRef.current = true
+    commitTextEdit(node.id, editRef.current ? editRef.current.innerText : draftRef.current)
+  }
+
   useLayoutEffect(() => {
-    if (editing && editRef.current) {
-      editRef.current.innerText = resolved.text
-      editRef.current.focus()
-      const range = document.createRange()
-      range.selectNodeContents(editRef.current)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    }
+    if (!editing || !editRef.current) return
+    committedRef.current = false
+    draftRef.current = resolved.text
+    editRef.current.innerText = resolved.text
+    editRef.current.focus()
+    const range = document.createRange()
+    range.selectNodeContents(editRef.current)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    // Clicking another node removes this editor without a blur event; the
+    // cleanup still runs first, so the typed text is not lost.
+    return () => commit()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing])
 
   if (editing) {
     return (
       <div
+        // The key forces a fresh DOM node on both mode switches. Reusing the
+        // static div would leave the browser-typed content behind for React to
+        // render the committed text next to — the duplicate-text bug.
+        key="text-editing"
         data-node-id={node.id}
         ref={editRef}
         contentEditable
@@ -297,20 +317,32 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
         spellCheck={false}
         style={{ ...style, outline: 'none', userSelect: 'text' }}
         onPointerDown={(e) => e.stopPropagation()}
+        onInput={(e) => {
+          draftRef.current = e.currentTarget.innerText
+        }}
         onKeyDown={(e) => {
           e.stopPropagation()
-          if (e.key === 'Escape') {
+          if (e.key === 'Enter') {
             e.preventDefault()
-            commitTextEdit(node.id, editRef.current?.innerText ?? '')
+            if (e.altKey || e.shiftKey) {
+              // Option-Enter (and Shift-Enter): a newline inside the value.
+              document.execCommand('insertLineBreak')
+            } else {
+              commit()
+            }
+          } else if (e.key === 'Escape') {
+            e.preventDefault()
+            commit()
           }
         }}
-        onBlur={() => commitTextEdit(node.id, editRef.current?.innerText ?? '')}
+        onBlur={commit}
       />
     )
   }
 
   return (
     <div
+      key="text-static"
       data-node-id={ghost ? undefined : node.id}
       style={style}
       {...events}

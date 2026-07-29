@@ -11,23 +11,18 @@ function NodeIcon({ node }: { node: AnyNode }) {
   return <Frame size={12} className="layer-icon" />
 }
 
-/** Placeholder fields get a hollow ring; connected fields a filled dot; plain text nothing. */
+/**
+ * Fields get a green dot whatever they read from: hollow while unconnected,
+ * filled once a connection is attached. Plain text gets nothing.
+ */
 function sourceDot(node: AnyNode): string | null {
   if (node.type !== 'text' || !node.field) return null
-  switch (node.field.connection.type) {
-    case 'none':
-      return 'dot-field'
-    case 'binding':
-      return 'dot-binding'
-    case 'generator':
-      return 'dot-generator'
-  }
+  return node.field.connection.type === 'none' ? 'dot-field' : 'dot-connected'
 }
 
 const DOT_TITLES: Record<string, string> = {
-  'dot-field': 'Placeholder field',
-  'dot-binding': 'Bound to data',
-  'dot-generator': 'Generator-driven',
+  'dot-field': 'Content field (placeholder)',
+  'dot-connected': 'Content field — connected',
 }
 
 function LayerRow({ id, depth }: { id: NodeId; depth: number }) {

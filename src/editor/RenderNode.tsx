@@ -25,20 +25,16 @@ export interface ContentChip {
 
 /**
  * The chip shown for a text layer: only fields get one, labeled with the
- * field's name. Placeholder (connection 'none') gets the hollow variant —
- * marked, but nothing wired yet; generator/binding get their usual colors.
- * Plain text carries no field, so no chip.
+ * field's name. The chip is a field badge, not a source badge — same green
+ * either way, hollow while unconnected and filled with a ⚡ once a connection
+ * is attached, whichever source it reads from. Plain text gets no chip.
  */
 export function contentChip(node: AnyNode | undefined): ContentChip | null {
   if (!node || node.type !== 'text' || !node.field) return null
-  const label = `⌁ ${node.field.name}`
-  switch (node.field.connection.type) {
-    case 'none':
-      return { label, cls: 'chip-field' }
-    case 'binding':
-      return { label, cls: 'chip-binding' }
-    case 'generator':
-      return { label, cls: 'chip-generator' }
+  const connected = node.field.connection.type !== 'none'
+  return {
+    label: `${connected ? '⚡' : '⌁'} ${node.field.name}`,
+    cls: connected ? 'chip-field is-connected' : 'chip-field',
   }
 }
 

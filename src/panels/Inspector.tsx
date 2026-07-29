@@ -78,7 +78,7 @@ function EmptyInspector() {
           <li><b>Double-click</b> a text frame to edit it</li>
           <li><b>Space + drag</b> pans, <b>⌘/Ctrl + scroll</b> zooms</li>
           <li><b>Shift + A</b> toggles auto layout on a frame</li>
-          <li>Mark a text layer as a <b>content field</b> — or just connect it to data or a generator, which marks it for you</li>
+          <li>Mark a text layer as a <b>content field</b>, then connect it to a generator or to data</li>
           <li>Turn a frame into a <b>component</b>: the fields inside it are its content API</li>
           <li><b>Repeat this</b> wraps any layer in a repeater; bind the repeater to a collection</li>
         </ul>
@@ -419,22 +419,24 @@ function TextStyleSection({ node }: { node: TextNode }) {
   )
 }
 
-const CONNECTION_LABEL: Record<FieldConnection['type'], string> = {
-  none: 'placeholder',
-  generator: 'generator',
-  binding: 'data',
+function connectionTitle(connection: FieldConnection): string {
+  if (connection.type === 'generator') return 'Connected to a generator'
+  if (connection.type === 'binding') return `Connected to data (${connection.path || 'no path'})`
+  return 'Content field — no connection yet'
 }
 
-const CONNECTION_CHIP: Record<FieldConnection['type'], string> = {
-  none: 'chip-placeholder',
-  generator: 'chip-generator',
-  binding: 'chip-binding',
-}
-
+/**
+ * The field badge. A field is a field whatever it reads from, so the colour
+ * never changes with the source — only the fill and the glyph do.
+ */
 function ConnectionChip({ connection }: { connection: FieldConnection }) {
+  const connected = connection.type !== 'none'
   return (
-    <span className={`content-chip ${CONNECTION_CHIP[connection.type]}`}>
-      {CONNECTION_LABEL[connection.type]}
+    <span
+      className={`content-chip chip-field ${connected ? 'is-connected' : ''}`}
+      title={connectionTitle(connection)}
+    >
+      {connected ? '⚡ connected' : '⌁ field'}
     </span>
   )
 }
@@ -451,9 +453,9 @@ function fieldScope(doc: DesignDoc, id: NodeId): { collectionPath?: string; comp
 
 /**
  * Designation first: a text layer is plain until it is marked as a field, and
- * only then does its name, intent and constraint mean anything. The connection
- * sits inside the field block because it is the field climbing its ladder —
- * except on plain text, where connecting marks the layer in the same action.
+ * only then does its name, intent and constraint mean anything. Designation
+ * also gates connection — the connection block is a child of the field, so
+ * plain text shows its own text and the Mark button, and nothing else.
  */
 function ContentFieldSection({ node }: { node: TextNode }) {
   const doc = useStore((s) => s.doc)
@@ -474,9 +476,12 @@ function ContentFieldSection({ node }: { node: TextNode }) {
       }
     >
       {!field && (
-        <button className="btn btn-mark-field" onClick={() => markAsField(node.id)}>
-          ＋ Mark as content field
-        </button>
+        <>
+          <ConnectionEditor target={{ kind: 'node', node }} collectionPath={collectionPath} />
+          <button className="btn btn-mark-field" onClick={() => markAsField(node.id)}>
+            ＋ Mark as content field
+          </button>
+        </>
       )}
 
       {field && (
@@ -536,8 +541,12 @@ function ContentFieldSection({ node }: { node: TextNode }) {
         </div>
       )}
 
-      <div className="insp-subhead">Connection</div>
-      <ConnectionEditor target={{ kind: 'node', node }} collectionPath={collectionPath} />
+      {field && (
+        <>
+          <div className="insp-subhead">Connection</div>
+          <ConnectionEditor target={{ kind: 'node', node }} collectionPath={collectionPath} />
+        </>
+      )}
 
       {collectionPath && (
         <div className="insp-hint">

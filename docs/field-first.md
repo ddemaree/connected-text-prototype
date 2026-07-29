@@ -27,32 +27,45 @@ designations.** Nothing is inferred, nothing is invented, nothing is missed.
 Schema derivation stops being a heuristic walk and becomes a serialization
 of intent. Coverage ("11 of 13 text layers structured") becomes exact.
 
-## No-friction rule: connecting is marking
+## Designation gates connection
 
-Requiring designation before binding must not add clicks. Applying a
-generator or a data binding to a plain text **auto-promotes** it to a field
-in the same action, with a sensible name prefilled (the binding's last path
-segment, or the generator kind). Careful users mark first and connect
-second; fast users just connect. Both land in the same state.
+Designation is not just first, it is the gate. Plain text shows no connection
+UI at all — it is a text frame, and its sidebar says only that. Marking it a
+field is what makes a connection possible, because the connection is a *child
+of the field*, not an alternative state of the text.
 
-## One connection spectrum
+That costs one click over the earlier "connecting is marking" shortcut, and
+buys a sidebar that never performs a structural promotion as a side effect of
+picking a source. (`setFieldConnection` still auto-promotes defensively if
+something calls it on plain text; no UI path does.)
 
-A field is always in one of three states, each subsuming the value of the
-one before it:
+## One connection, many sources
 
-1. **Placeholder** — unconnected. The layer's own text doubles as sample
-   value and default. Marking alone documents the contract.
-2. **Generator** — the constraint made executable. Intent and length aren't
-   just documented, they're demonstrated on canvas; reroll is property
-   testing for the layout.
-3. **Bound** — the mapping expressed. The field documents *and* implements
-   its connection to the data source.
+A field is either unconnected or connected:
 
-Repeaters run on the same spectrum at the frame level. A repeater maps a
-frame to a *collection* the way a field maps a text to a *value*:
-**count mode is the repeater's generator** — dummy cardinality with implicit
-rules — and collection binding is its bound state. Two designations (field,
-repeater), one connection ladder, and the whole model composes from there.
+1. **Unconnected** — the layer's own text is the field's placeholder: sample
+   value and default in one. Marking alone documents the contract.
+2. **Connected** — one child object supplies the text, and the placeholder
+   waits underneath for the day it is unlinked.
+
+The connection names a **source**, and sources are a list rather than a pair
+of tabs. This prototype ships two — **Generator** (the constraint made
+executable: intent and length demonstrated on canvas, reroll as property
+testing for the layout) and **Data** (the mapping expressed, a path in the
+JSON source) — and a third, from a plugin, would be one more entry in that
+list, not a third tab in a hardcoded row.
+
+The interaction is Figma's variable-binding pill: one pill standing for the
+connection, a popover to attach or switch its source, an unlink icon to drop
+it, and the source's own parameters inline beneath. Connecting and switching
+are the same gesture, because a connection is one object being re-pointed
+rather than two states being toggled between.
+
+Repeaters run the same shape at the frame level. A repeater maps a frame to a
+*collection* the way a field maps a text to a *value*: **count mode is the
+repeater's placeholder** — dummy cardinality with implicit rules — and
+collection binding is its connected state. Two designations (field,
+repeater), one connection idea, and the whole model composes from there.
 
 ## Structure-first repeaters
 
@@ -95,8 +108,8 @@ in the schema deriver.
 
 ## Two honest detach operations
 
-- **Disconnect** — drop the connection, keep the field. The last shown text
-  becomes the placeholder; the contract survives.
+- **Unlink** — the icon on the connection pill: drop the connection, keep the
+  field. The last shown text becomes the placeholder; the contract survives.
 - **Remove field** — demote to plain text. If the field is in a published
   schema, Compare changes reports it as a `remove-field` migration, which
   is exactly the right weight for deleting part of a contract.
@@ -114,11 +127,11 @@ inference only drafts it.
 - **Singleton grouping** is implicit (fields grouped by their top-level
   frame). An explicit third designation ("content group") might eventually
   be right; not adding it without pressure.
-- **Throwaway dummy text.** Under this model, putting a generator on a text
-  asserts fieldhood. That's the thesis (if you need generated text, you're
-  designing for content you don't have yet), and Remove field is the escape
-  hatch — but a scratch/lorem mode excluded from the contract remains a
-  possible future concession.
+- **Throwaway dummy text.** Under this model, reaching for a generator means
+  first designating a field. That's the thesis (if you need generated text,
+  you're designing for content you don't have yet), and Remove field is the
+  escape hatch — but a scratch/lorem mode excluded from the contract remains
+  a possible future concession.
 
 ## Design principle
 

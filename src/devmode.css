@@ -62,26 +62,21 @@
   text-transform: none;
 }
 
-.content-chip.dev-chip.chip-binding {
-  color: #6fe3c4;
-}
-
-.content-chip.dev-chip.chip-generator {
-  color: #f7cd7a;
-}
-
-/* Field markup on static text: hollow, because nothing is connected. */
-.content-chip.chip-field {
-  background: transparent;
-  border: 1px dashed var(--dev-line);
-  color: var(--dev);
-  padding: 0.5px 5px;
-}
-
+/*
+ * Dev-mode field chips sit on the artwork, so they get a light card. Same two
+ * states as everywhere else: hollow while unconnected, solid once connected —
+ * never a per-source colour.
+ */
 .content-chip.dev-chip.chip-field {
   background: rgba(255, 255, 255, 0.92);
   border-color: rgba(26, 127, 78, 0.55);
   color: #1a7f4e;
+}
+
+.content-chip.dev-chip.chip-field.is-connected {
+  background: var(--dev);
+  border-color: var(--dev);
+  color: #08170f;
 }
 
 /* ---------- panel ---------- */

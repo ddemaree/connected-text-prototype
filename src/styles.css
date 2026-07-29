@@ -15,6 +15,10 @@
   --repeater-soft: rgba(53, 194, 160, 0.16);
   --generator: #f2b84b;
   --generator-soft: rgba(242, 184, 75, 0.18);
+  /* Content fields are green everywhere, connected or not — the same green as
+     dev mode, because a field is a field whatever it reads from. */
+  --field: #2ec27e;
+  --field-soft: rgba(46, 194, 126, 0.16);
   --danger: #ff6b6b;
   --canvas-bg: #121212;
   font-size: 13px;
@@ -273,18 +277,6 @@ button {
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.dot-binding {
-  background: var(--repeater);
-}
-
-.dot-generator {
-  background: var(--generator);
-}
-
-.dot-prop {
-  background: var(--component);
 }
 
 .layer-repeat-badge {
@@ -776,16 +768,6 @@ button {
   white-space: nowrap;
 }
 
-.chip-binding {
-  background: var(--repeater-soft);
-  color: var(--repeater);
-}
-
-.chip-generator {
-  background: var(--generator-soft);
-  color: var(--generator);
-}
-
 .chip-repeater {
   background: var(--repeater-soft);
   color: var(--repeater);
@@ -1033,9 +1015,9 @@ button {
 }
 
 .btn-mark-field:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  color: var(--field);
+  background: var(--field-soft);
+  border-color: var(--field);
 }
 
 .content-field-set {
@@ -1081,12 +1063,174 @@ button {
   gap: 7px;
 }
 
-/* Unconnected: hollow, because nothing is wired up yet. */
-.chip-placeholder {
+/*
+ * The field badge — layers panel dot, selection chip, inspector badge. Green
+ * either way: hollow while unconnected, filled once something is attached.
+ * A connection never changes the colour, only the fill.
+ */
+.content-chip.chip-field {
   background: transparent;
-  border: 1px dashed var(--border);
-  color: var(--text-dim);
+  border: 1px dashed var(--field);
+  color: var(--field);
   padding: 0.5px 5px;
+}
+
+.content-chip.chip-field.is-connected {
+  background: var(--field-soft);
+  border-style: solid;
+  border-color: transparent;
+}
+
+/* ---------- connection: the field's child object ---------- */
+
+/* Anchors the source popover to the pill. */
+.binding-pill-wrap {
+  position: relative;
+}
+
+.binding-pill {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding-right: 3px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.binding-pill:hover {
+  border-color: #454545;
+}
+
+.binding-pill-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 5px 2px 5px 8px;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.binding-pill-icon {
+  flex-shrink: 0;
+  color: var(--field);
+}
+
+.binding-pill-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.binding-pill-unlink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.binding-pill-unlink:hover {
+  color: var(--text);
+  background: #383838;
+}
+
+.binding-pill.is-empty {
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.binding-pill.is-empty .binding-pill-icon,
+.binding-pill.is-empty .binding-pill-label {
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+.binding-pill.is-empty:hover {
+  border-color: var(--field);
+  background: var(--field-soft);
+  color: var(--field);
+}
+
+.connection-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+}
+
+.connection-source-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 1px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.connection-source-row:hover {
+  background: var(--panel-2);
+}
+
+.connection-source-row.is-current {
+  background: var(--field-soft);
+}
+
+.connection-source-icon {
+  grid-row: 1 / span 2;
+  margin-top: 2px;
+  color: var(--field);
+}
+
+.connection-source-name {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.connection-source-blurb {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* Local parameters of the connection, labelled with the source it belongs to. */
+.connection-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connection-eyebrow {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--field);
 }
 
 .chip-component {
@@ -1171,8 +1315,12 @@ button {
   color: var(--accent);
 }
 
-/* Layers panel: placeholder fields get a hollow ring, not a filled dot. */
+/* Layers panel: unconnected fields get a hollow ring, connected ones a fill. */
 .layer-dot.dot-field {
   background: transparent;
-  border: 1.5px solid var(--text-dim);
+  border: 1.5px solid var(--field);
+}
+
+.layer-dot.dot-connected {
+  background: var(--field);
 }

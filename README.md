@@ -23,13 +23,13 @@ npm run dev        # → http://localhost:5173
 
 ## The demo document
 
-The canvas seeds with four top-level frames that exercise every rung of the
-connection ladder:
+The canvas seeds with four top-level frames that exercise every state a field
+can be in:
 
-- **Hero** — one field per state: `kicker` is a **placeholder** (marked, but
-  not connected — the "FROM THE EDITORS" text you see is the whole contract),
-  `title` and `tagline` are **bound** to `site.title` / `site.tagline`, and
-  `standfirst` is **generator**-driven.
+- **Hero** — one field per state: `kicker` is **unconnected** (marked, but
+  nothing attached — the "FROM THE EDITORS" text you see is the whole
+  contract), `title` and `tagline` are connected to **data** (`site.title` /
+  `site.tagline`), and `standfirst` to a **generator**.
 - **Article card** — a component definition whose four fields (`category`,
   `title`, `standfirst`, `author`) are its content API. Every field in the
   definition is a placeholder, so the card looks right with no data wired in
@@ -62,7 +62,7 @@ connection ladder:
 and for a field's **placeholder** (its own text — shown until the field is
 connected). A field with a live connection is owned by that connection
 instead: double-clicking it shows a toast pointing at the Content panel,
-where **Disconnect** hands editing back (see below).
+where the connection pill's **unlink** icon hands editing back (see below).
 
 ### Designation: field is a promotion
 By default, a text frame is just text — nothing more than what it says.
@@ -77,47 +77,57 @@ button. Marking never blocks on naming: new fields get a default name
 (`text_field_1`, `text_field_2`, …) — the "Frame 12" of this system — that's
 an invitation to rename, not a requirement.
 
-### The connection ladder
-A field is always at one of three rungs, each subsuming the one before it:
+### The connection: a child of the field
+A field is either **unconnected** — its own text is the placeholder, sample
+value and default in one — or **connected**, in which case one child object
+supplies its text and the placeholder waits underneath for an unlink.
 
-1. **Placeholder** — unconnected. The layer's own text doubles as sample
-   value and default; marking alone documents the contract.
-2. **Generator** — deterministic dummy text with a kind (title / standfirst /
-   paragraph / label / name), a length in words / sentences / characters, and
-   a reroll (🎲) button. Repeater clones and instances vary automatically so
-   repeated content doesn't look copy-pasted.
-3. **Data** — bound to a path in the JSON document (Data tab), like a CMS
-   field binding. Inside a collection-bound repeater, `item.*` paths resolve
-   per clone. Missing paths render as a dimmed ⚠ placeholder.
+The connection names a **source**, and sources are a list, not a fixed pair of
+tabs — a plugin source would be one more entry:
 
-Repeater frames climb the same ladder one level up, at the frame instead of
-the field: **count mode** — a fixed number of clones, with no data required —
-is a repeater's placeholder state; binding it to a collection is its bound
-state. Two designations (field, repeater), one connection ladder.
+- **Generator** — deterministic dummy text with a kind (title / standfirst /
+  paragraph / label / name), a length in words / sentences / characters, and
+  a reroll (🎲) button. Repeater clones and instances vary automatically so
+  repeated content doesn't look copy-pasted.
+- **Data** — a path in the JSON document (Data tab), like a CMS field
+  binding. Inside a collection-bound repeater, `item.*` paths resolve per
+  clone. Missing paths render as a dimmed ⚠ placeholder.
 
-### No-friction connecting: auto-promotion
-Requiring designation before connection must not cost a click. The Content
-panel's segmented control reads `[Static | Generate | Data]` on plain text;
-choosing **Generate** or **Data** auto-promotes the layer to a field in the
-same action — a sensible name is prefilled (the binding's last path segment,
-or the generator kind) and the field block appears with the caption
-*"Connecting text marks it as a content field."* Once it's a field, the
-control becomes `[Placeholder | Generate | Data]`. Careful users mark first
-and connect second; fast users just connect — both land in the same state.
+The sidebar presents it the way Figma presents a bound variable: **one pill**
+standing for the connection. Unconnected fields show a dashed **Add
+connection** pill; clicking either pill opens a popover listing the sources
+(icon, name, one-line blurb, current one highlighted), and the source's own
+parameters render inline under the pill beneath a small `GENERATOR` / `DATA`
+eyebrow. Connecting and switching are the same gesture — one object being
+re-pointed, not two states being toggled.
+
+Repeater frames run the same shape one level up, at the frame instead of the
+field: **count mode** — a fixed number of clones, with no data required — is a
+repeater's placeholder state; binding it to a collection is its connected
+state. Two designations (field, repeater), one connection idea.
+
+### Designation gates connection
+Plain text shows **no connection UI at all** — just its text and the ＋ Mark
+as content field button. Marking is what makes a connection possible, because
+the connection is a child of the field rather than an alternative state of the
+text. That costs one click over an earlier "connecting is marking" shortcut,
+and buys a sidebar that never promotes a layer as a side effect of picking a
+source.
 
 ### Names: defaults first, meaning later
 Renaming a field inside a collection-bound repeater's template **is** the act
 of connecting it: rename `text_field_1` to `title`, and if the bound
 collection's items have a `title` key, the field snaps to `item.title` on its
-own (a toast confirms it — Disconnect afterward if you meant to keep the
+own (a toast confirms it — unlink afterward if you meant to keep the
 placeholder). Outside a bound template, a default name is just flagged as
 worth renaming. The publish card lints this contract hygiene the way a
 linter flags a TODO: once any field is still default-named, it shows
 `N fields still have default names` in amber — a quality gate, not a block.
 
 ### Two honest ways to detach
-- **Disconnect** drops the connection but keeps the field: the text last
-  shown becomes the new placeholder, so the contract survives untouched.
+- **Unlink** — the icon on the right of the connection pill — drops the
+  connection but keeps the field: the text last shown becomes the new
+  placeholder, so the contract survives untouched.
 - **Remove field** demotes the layer back to plain text, baking in what it
   showed. If the field was part of a published schema, Compare changes
   reports it as a `remove-field` migration — exactly the right weight for
@@ -175,9 +185,10 @@ Toggle with the `</> Dev Mode` pill at the right of the toolbar, or **Shift+D**
 Mode: the canvas becomes inspect-only — selection, pan, and zoom, but no
 drawing tools, no drag/resize, no double-click text editing, no nudge/delete.
 Field chips for every field stay visible on canvas (not just on hover),
-labeled with the field's name; a **placeholder** field's chip is hollow — it's
-designated, but nothing's connected — while generator/binding fields get
-their usual colors. Plain text never gets a chip.
+labeled with the field's name. Chips are green whatever the field reads from:
+hollow and prefixed `⌁` while unconnected — designated, but nothing attached —
+and solid with a `⚡` once a connection is on it, generator and data alike.
+Plain text never gets a chip.
 
 The right panel becomes the **inspect panel** in place of the Inspector:
 - **Nothing selected** — a file view: publish status, drift since the last

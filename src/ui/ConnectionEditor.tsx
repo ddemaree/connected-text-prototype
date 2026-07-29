@@ -263,6 +263,8 @@ function BindingPill({
 
   useEffect(() => {
     if (!open) return
+    // Capture: canvas layers stop pointerdown from bubbling out of the React
+    // root, so a bubble-phase listener would never see a click on the artwork.
     const onDown = (e: PointerEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
     }
@@ -273,10 +275,10 @@ function BindingPill({
       e.stopPropagation()
       setOpen(false)
     }
-    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('pointerdown', onDown, true)
     window.addEventListener('keydown', onKey, true)
     return () => {
-      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('pointerdown', onDown, true)
       window.removeEventListener('keydown', onKey, true)
     }
   }, [open])

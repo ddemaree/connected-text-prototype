@@ -1170,3 +1170,9 @@ button {
 .link-btn:hover {
   color: var(--accent);
 }
+
+/* Layers panel: placeholder fields get a hollow ring, not a filled dot. */
+.layer-dot.dot-field {
+  background: transparent;
+  border: 1.5px solid var(--text-dim);
+}

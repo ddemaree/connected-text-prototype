@@ -38,8 +38,8 @@ export interface Viewport {
 /** The parts of a field an author edits directly; the connection has its own action. */
 export type FieldPatch = Partial<Pick<TextField, 'name' | 'intent' | 'description' | 'maxLength'>>
 
-const STORAGE_KEY = 'frameshift-doc-v3'
-const SCHEMA_KEY = 'frameshift-schema-v2'
+const STORAGE_KEY = 'frameshift-doc-v4'
+const SCHEMA_KEY = 'frameshift-schema-v3'
 const HISTORY_LIMIT = 60
 
 interface EditorState {
@@ -855,7 +855,7 @@ export const useStore = create<EditorState>()(
             heightMode: 'hug',
             children: [textId],
             fill: null,
-            stroke: null,
+            stroke: '#d8d2c6',
             strokeWidth: 1,
             cornerRadius: 8,
             shadow: false,

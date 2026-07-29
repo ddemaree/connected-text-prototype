@@ -256,20 +256,29 @@ export function buildSeedDoc(): DesignDoc {
       fill: '#f2efe9',
       cornerRadius: 16,
       autoLayout: { direction: 'row', gap: 16, paddingX: 20, paddingY: 20, align: 'start', justify: 'start', wrap: true },
-      children: ['grid-item', 'grid-empty'],
+      children: ['grid-card', 'grid-empty'],
       repeat: { mode: 'collection', path: 'articles' },
+    }),
+  )
+  add(
+    frame('grid-card', 'grid', 'Card', {
+      width: 296,
+      widthMode: 'fixed',
+      heightMode: 'hug',
+      autoLayout: { direction: 'column', gap: 6, paddingX: 0, paddingY: 0, align: 'start', justify: 'start', wrap: false },
+      children: ['grid-item', 'grid-readtime'],
     }),
   )
   const gridItem: InstanceNode = {
     id: 'grid-item',
     type: 'instance',
     name: 'Article card',
-    parentId: 'grid',
+    parentId: 'grid-card',
     x: 0,
     y: 0,
     width: 296,
     height: 200,
-    widthMode: 'fixed',
+    widthMode: 'fill',
     heightMode: 'hug',
     componentId: 'card',
     overrides: {
@@ -280,6 +289,15 @@ export function buildSeedDoc(): DesignDoc {
     },
   }
   add(gridItem)
+  add(
+    // Plain on purpose: mark it, rename it to a data key (readTime), and
+    // name-snap connects it — the live demo of naming-as-mapping.
+    text('grid-readtime', 'grid-card', 'Read time', '8 min read', {
+      fontSize: 11,
+      fontWeight: 600,
+      color: '#8a8a8a',
+    }),
+  )
   add(
     frame('grid-empty', 'grid', 'Empty state', {
       widthMode: 'fill',

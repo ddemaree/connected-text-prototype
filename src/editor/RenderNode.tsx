@@ -243,7 +243,6 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
   const setEditing = useStore((s) => s.setEditing)
   const select = useStore((s) => s.select)
   const commitTextEdit = useStore((s) => s.commitTextEdit)
-  const pushHistory = useStore((s) => s.pushHistory)
   const setToast = useStore((s) => s.setToast)
   const editRef = useRef<HTMLDivElement | null>(null)
 
@@ -322,7 +321,6 @@ function TextView({ node, parentLayout, ctx, ghost, isRootLevel }: ViewProps<Tex
               e.stopPropagation()
               select([node.id])
               if (editable) {
-                pushHistory()
                 setEditing(node.id)
               } else {
                 const connection = node.field!.connection

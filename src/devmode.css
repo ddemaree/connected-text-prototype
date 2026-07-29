@@ -456,11 +456,6 @@ pre.dev-code {
 
 /* ===== Field-first ===== */
 
-/* Layers panel: placeholder fields get a hollow ring, not a filled dot. */
-.layer-dot.dot-field {
-  background: transparent;
-  border: 1.5px solid var(--dev);
-}
 
 /* Publish card: default-name lint, amber and non-blocking. */
 .dev-lint {

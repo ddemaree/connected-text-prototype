@@ -70,10 +70,6 @@
   color: #f7cd7a;
 }
 
-.content-chip.dev-chip.chip-prop {
-  color: #cbb0ff;
-}
-
 /* Field markup on static text: hollow, because nothing is connected. */
 .content-chip.chip-field {
   background: transparent;
@@ -399,11 +395,11 @@
   opacity: 1;
 }
 
-.dev-list-row.is-prop {
+.dev-list-row.is-field {
   grid-template-columns: 1fr auto;
 }
 
-.dev-list-row.is-prop .dev-list-label {
+.dev-list-row.is-field .dev-list-label {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--component);
@@ -416,7 +412,7 @@
   white-space: nowrap;
 }
 
-.dev-list-row.is-prop .dev-list-value {
+.dev-list-row.is-field .dev-list-value {
   grid-column: 1 / -1;
 }
 

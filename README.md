@@ -208,9 +208,11 @@ Every designated **field** (plus component fields and collection bindings)
 derives a **content schema** — types (Collection / Component / Singleton),
 each with fields (name, intent, TS type, constraint). This is computed live;
 nothing is written until you **Publish schema** from the Dev Mode file view.
-The Types section reads e.g. `9 fields across 4 types · 11 of 13 text layers
+The Types section reads e.g. `15 fields across 4 types · 11 of 13 text layers
 structured` — coverage is exact, because the contract is exactly the set of
-designations.
+designations. (A component's fields are counted in the component type *and*
+in any collection whose template is an instance of it: those are two distinct
+types in the contract.)
 
 Publishing versions the schema (`Schema v3 · published just now`) and keeps
 field ids stable across renames — a field is matched to its previous version
@@ -229,15 +231,15 @@ names`. Republishing bumps the version and clears the drift.
 src/
   model/types.ts       # document model: nodes, sizing modes, fields, connections
   model/generators.ts  # seeded PRNG dummy-text generators per kind/unit
-  model/resolve.ts      # path lookup, field/connection resolution, bindable-path listing
-  model/schema.ts       # schema derivation, publish/migration diffing
-  model/codegen.ts      # TS interfaces, sample JSON, fetch snippets, Connected code
-  model/seed.ts         # the demo document
-  store.ts               # zustand store: doc, selection, history, all edit actions
-  editor/                # canvas, node renderer, selection overlay, interactions
-  panels/                # toolbar, layers, data, components, inspector
-  panels/DevPanel.tsx    # Dev Mode's inspect panel (replaces the Inspector)
-  ui/                     # inspector controls + the shared ConnectionEditor
+  model/resolve.ts     # path lookup, field/connection resolution, bindable-path listing
+  model/schema.ts      # schema derivation, publish/migration diffing
+  model/codegen.ts     # TS interfaces, sample JSON, fetch snippets, Connected code
+  model/seed.ts        # the demo document
+  store.ts             # zustand store: doc, selection, history, all edit actions
+  editor/              # canvas, node renderer, selection overlay, interactions
+  panels/              # toolbar, layers, data, components, inspector
+  panels/DevPanel.tsx  # Dev Mode's inspect panel (replaces the Inspector)
+  ui/                  # inspector controls + the shared ConnectionEditor
 ```
 
 Nodes render to DOM, with auto layout mapped onto flexbox — so text

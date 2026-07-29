@@ -381,7 +381,7 @@ function ConnectedCodeSection({ doc, node }: { doc: DesignDoc; node: InstanceNod
             const value = override ? resolveOverride(override, doc, ctx).text : resolveText(defNode, doc, ctx).text
             return (
               <button
-                className="dev-list-row is-prop"
+                className="dev-list-row is-field"
                 key={field.name}
                 title="Copy value"
                 onClick={() => copy(value, `“${truncate(value)}”`)}

@@ -768,44 +768,6 @@ button {
   color: var(--danger);
 }
 
-.expose-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.prop-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.prop-name {
-  font-size: 11px;
-  font-family: ui-monospace, Menlo, monospace;
-  color: var(--component);
-  width: 72px;
-  flex-shrink: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.instance-prop {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 7px;
-  background: #222;
-  border-radius: 6px;
-}
-
-.instance-prop-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .content-chip {
   font-size: 9.5px;
   font-weight: 600;
@@ -822,11 +784,6 @@ button {
 .chip-generator {
   background: var(--generator-soft);
   color: var(--generator);
-}
-
-.chip-prop {
-  background: var(--component-soft);
-  color: var(--component);
 }
 
 .chip-repeater {
